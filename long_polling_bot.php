@@ -757,7 +757,7 @@ while (true) {
                     continue;
                 }
                 
-                // بررسی نوع پیام - فقط متن ساده مجاز است
+                // بررسی نوع پیام ارسالی
                 if (isset($update['message']['sticker']) || 
                     isset($update['message']['animation']) || 
                     isset($update['message']['photo']) || 
@@ -765,27 +765,24 @@ while (true) {
                     isset($update['message']['voice']) || 
                     isset($update['message']['audio']) || 
                     isset($update['message']['document'])) {
-                    
+                    // پیام غیر متنی است
                     $response = "شما تنها مجاز به ارسال پیام بصورت متنی میباشید\nپیام شما ارسال نشد";
                     sendMessage($_ENV['TELEGRAM_TOKEN'], $user_id, $response);
                     continue;
                 }
                 
                 // بررسی وجود لینک در پیام
-                if (strpos($text, 'http://') !== false || 
-                    strpos($text, 'https://') !== false || 
-                    strpos($text, 'www.') !== false || 
-                    strpos($text, '.com') !== false || 
-                    strpos($text, '.ir') !== false || 
-                    strpos($text, '.net') !== false || 
-                    strpos($text, '.org') !== false || 
-                    strpos($text, 't.me/') !== false || 
-                    strpos($text, '@') !== false) {
-                    
+                if (preg_match('/(https?:\/\/[^\s]+)/i', $text) || 
+                    preg_match('/(www\.[^\s]+)/i', $text) || 
+                    preg_match('/(@[^\s]+)/i', $text) || 
+                    preg_match('/(t\.me\/[^\s]+)/i', $text)) {
+                    // پیام حاوی لینک است
                     $response = "ارسال لینک ممنوع میباشد!\nپیام شما ارسال نشد";
                     sendMessage($_ENV['TELEGRAM_TOKEN'], $user_id, $response);
                     continue;
                 }
+                
+
                 
                 // ارسال پیام به بازیکن دیگر
                 $sender_name = isset($update['message']['from']['first_name']) ? $update['message']['from']['first_name'] : 'بازیکن';
