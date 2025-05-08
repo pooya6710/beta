@@ -32,7 +32,7 @@ while (true) {
     
     if (!$updates || !isset($updates['result']) || empty($updates['result'])) {
         // اگر آپدیتی نبود، 1 ثانیه صبر کن و دوباره تلاش کن
-        sleep(1);
+        usleep(100000); // 0.1 second
         continue;
     }
     
@@ -71,7 +71,7 @@ function getUpdates($token, $offset = 0) {
     $url = "https://api.telegram.org/bot{$token}/getUpdates";
     $params = [
         'offset' => $offset,
-        'timeout' => 30,
+        'timeout' => 5,
         'allowed_updates' => json_encode(["message", "callback_query", "inline_query"])
     ];
     
