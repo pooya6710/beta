@@ -92,8 +92,8 @@ class RequestTimeoutController
         try {
             // جستجوی درخواست موجود
             $request = DB::table('friend_requests')
-                ->where('sender_id', $sender_id)
-                ->where('receiver_id', $receiver_id)
+                ->where('from_user_id', $sender_id)
+                ->where('to_user_id', $receiver_id)
                 ->where('status', 'pending')
                 ->first();
                 
@@ -203,8 +203,8 @@ class RequestTimeoutController
             
             // ثبت درخواست جدید
             $request_id = DB::table('friend_requests')->insert([
-                'sender_id' => $sender_id,
-                'receiver_id' => $receiver_id,
+                'from_user_id' => $sender_id,
+                'to_user_id' => $receiver_id,
                 'status' => 'pending',
                 'created_at' => date('Y-m-d H:i:s')
             ]);
