@@ -331,14 +331,20 @@ elseif ($text == $locale->trans('keyboard.home.leaderboard_winer')){
 elseif ($text == $locale->trans('keyboard.home.reject')){
     $matchResult = DB::rawQuery("SELECT * FROM matches WHERE (player1 = ? OR player2 = ?) AND (status = 'playing');" , [$telegram->from_id , $telegram->from_id]);
     $match = isset($matchResult[0]) ? $matchResult[0] : null;
-    if ($match['player1'] == $telegram->from_id)
-        $friend_telegram_id = $match['player2'];
-    elseif ($match['player2'] == $telegram->from_id)
-        $friend_telegram_id = $match['player1'];
-
-    $telegram->sendMessage('%message.u_reject_chat%')->keyboard('main.home')->send();
-    $telegram->sendMessage('%message.he_reject_chat%')->keyboard('main.home')->send($friend_telegram_id);
-    $step->clear();
+    if ($match && isset($match['player1']) && isset($match['player2'])) {
+        if ($match['player1'] == $telegram->from_id)
+            $friend_telegram_id = $match['player2'];
+        elseif ($match['player2'] == $telegram->from_id)
+            $friend_telegram_id = $match['player1'];
+        
+        $telegram->sendMessage('%message.u_reject_chat%')->keyboard('main.home')->send();
+        $telegram->sendMessage('%message.he_reject_chat%')->keyboard('main.home')->send($friend_telegram_id);
+        $step->clear();
+        $step->clear($friend_telegram_id);
+    } else {
+        $telegram->sendMessage('⚠️ بازی فعالی وجود ندارد')->keyboard('main.home')->send();
+        $step->clear();
+    }
     $step->clear($friend_telegram_id);
     exit();
 }
@@ -430,7 +436,12 @@ if ($step->get() == 'add_friend' or str_starts_with($text , 'httpreqfriend_')){
 elseif ($step->get() == 'in_chat') {
     $matchResult = DB::rawQuery("SELECT * FROM matches WHERE (player1 = ? OR player2 = ?) AND (status = 'playing' or status = 'pending');" , [$telegram->from_id , $telegram->from_id]);
     $match = isset($matchResult[0]) ? $matchResult[0] : null;
-    if ($match['player1'] == $telegram->from_id)
+    if ($match && isset($match['player1']) && isset($match['player2'])) {
+        if ($match['player1'] == $telegram->from_id)
+            $friend_telegram_id = $match['player2'];
+        elseif ($match['player2'] == $telegram->from_id)
+            $friend_telegram_id = $match['player1'];
+
         $friend_telegram_id = $match['player2'];
     elseif ($match['player2'] == $telegram->from_id)
         $friend_telegram_id = $match['player1'];
