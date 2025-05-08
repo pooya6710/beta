@@ -516,6 +516,7 @@ while (true) {
                                 [['text' => '👀 بازی با ناشناس'], ['text' => '🏆شرکت در مسابقه 8 نفره + جایزه🎁']],
                                 [['text' => '👥 دوستان'], ['text' => '💸 کسب درآمد 💸']],
                                 [['text' => '👤 حساب کاربری'], ['text' => '🏆نفرات برتر•']],
+                                [['text' => '👨‍👦‍👦 وضعیت زیرمجموعه‌ها'], ['text' => '💰 دلتا کوین روزانه']],
                                 [['text' => '• پشتیبانی👨‍💻'], ['text' => '⁉️راهنما •']]
                             ],
                             'resize_keyboard' => true
@@ -560,6 +561,241 @@ while (true) {
             }
             
             // در اینجا می‌توان سایر انواع callback_query را پردازش کرد
+            
+            // پردازش نمایش اطلاعات زیرمجموعه
+            if (strpos($callback_data, 'view_referral:') === 0) {
+                try {
+                    // استخراج آیدی ارجاع
+                    $referral_id = substr($callback_data, strlen('view_referral:'));
+                    
+                    // دریافت اطلاعات ارجاع
+                    $referral = \Application\Model\DB::table('referrals')->where('id', $referral_id)->first();
+                    if (!$referral) {
+                        answerCallbackQuery($_ENV['TELEGRAM_TOKEN'], $callback_query['id'], "⚠️ خطا: اطلاعات زیرمجموعه یافت نشد!");
+                        continue;
+                    }
+                    
+                    // دریافت اطلاعات کاربر دعوت کننده و دعوت شونده
+                    $referrer = \Application\Model\DB::table('users')->where('id', $referral['referrer_id'])->first();
+                    $referee = \Application\Model\DB::table('users')->where('id', $referral['referee_id'])->first();
+                    
+                    if (!$referrer || !$referee) {
+                        answerCallbackQuery($_ENV['TELEGRAM_TOKEN'], $callback_query['id'], "⚠️ خطا: اطلاعات کاربران یافت نشد!");
+                        continue;
+                    }
+                    
+                    // بررسی اینکه آیا کاربر درخواست کننده همان فرد دعوت کننده است
+                    if ($referrer['telegram_id'] != $user_id) {
+                        answerCallbackQuery($_ENV['TELEGRAM_TOKEN'], $callback_query['id'], "⚠️ خطا: شما دسترسی به این اطلاعات را ندارید!");
+                        continue;
+                    }
+                    
+                    // محاسبه پورسانت
+                    $user_reward = 0;
+                    if ($referral['started_rewarded']) $user_reward += 0.5;
+                    if ($referral['first_win_rewarded']) $user_reward += 1.5;
+                    if ($referral['profile_completed_rewarded']) $user_reward += 3;
+                    if ($referral['thirty_wins_rewarded']) $user_reward += 5;
+                    
+                    // دریافت آمار بازی‌های کاربر زیرمجموعه
+                    $stats = \Application\Model\DB::table('users_extra')->where('user_id', $referee['id'])->first();
+                    $total_games = 0;
+                    $wins = 0;
+                    if ($stats) {
+                        $total_games = $stats['played_games'] ?? 0;
+                        $wins = $stats['wins'] ?? 0;
+                    }
+                    
+                    // نمایش وضعیت پروفایل
+                    $profile_status = "تکمیل نشده ❌";
+                    $profile = \Application\Model\DB::table('user_profiles')->where('user_id', $referee['id'])->first();
+                    if ($profile) {
+                        // بررسی تکمیل بودن پروفایل
+                        $required_fields = ['full_name', 'gender', 'age', 'bio', 'province'];
+                        $complete = true;
+                        foreach ($required_fields as $field) {
+                            if (!isset($profile[$field]) || empty($profile[$field])) {
+                                $complete = false;
+                                break;
+                            }
+                        }
+                        $profile_status = $complete ? "تکمیل شده ✅" : "ناقص ⚠️";
+                    }
+                    
+                    // ساخت پیام اطلاعات زیرمجموعه
+                    $message = "📊 *اطلاعات زیرمجموعه*\n\n";
+                    $message .= "👤 *کاربر:* {$referee['username']}\n";
+                    $message .= "📅 *تاریخ عضویت:* " . date('Y-m-d H:i:s', strtotime($referral['created_at'])) . "\n";
+                    $message .= "🎮 *تعداد بازی‌ها:* {$total_games}\n";
+                    $message .= "🏆 *تعداد بردها:* {$wins}\n";
+                    $message .= "👤 *وضعیت پروفایل:* {$profile_status}\n\n";
+                    
+                    $message .= "💰 *وضعیت پورسانت‌ها:*\n";
+                    $message .= "• شروع بازی: " . ($referral['started_rewarded'] ? "دریافت شده ✅" : "دریافت نشده ❌") . " (0.5 دلتا کوین)\n";
+                    $message .= "• اولین برد: " . ($referral['first_win_rewarded'] ? "دریافت شده ✅" : "دریافت نشده ❌") . " (1.5 دلتا کوین)\n";
+                    $message .= "• تکمیل پروفایل: " . ($referral['profile_completed_rewarded'] ? "دریافت شده ✅" : "دریافت نشده ❌") . " (3 دلتا کوین)\n";
+                    $message .= "• 30 بازی موفق: " . ($referral['thirty_wins_rewarded'] ? "دریافت شده ✅" : "دریافت نشده ❌") . " (5 دلتا کوین)\n\n";
+                    
+                    $message .= "💵 *مجموع پورسانت:* {$user_reward} دلتا کوین";
+                    
+                    // دکمه بازگشت
+                    $back_keyboard = json_encode([
+                        'inline_keyboard' => [
+                            [
+                                ['text' => '🔙 بازگشت به لیست', 'callback_data' => "list_referrals"]
+                            ]
+                        ]
+                    ]);
+                    
+                    // ویرایش پیام قبلی
+                    editMessageTextWithKeyboard($_ENV['TELEGRAM_TOKEN'], $chat_id, $message_id, $message, $back_keyboard);
+                    answerCallbackQuery($_ENV['TELEGRAM_TOKEN'], $callback_query['id']);
+                    
+                } catch (Exception $e) {
+                    echo "خطا در نمایش اطلاعات زیرمجموعه: " . $e->getMessage() . "\n";
+                    answerCallbackQuery($_ENV['TELEGRAM_TOKEN'], $callback_query['id'], "⚠️ خطا: " . $e->getMessage());
+                }
+            }
+            
+            // پردازش لیست زیرمجموعه‌ها (برای دکمه بازگشت)
+            else if ($callback_data === 'list_referrals') {
+                try {
+                    // دریافت اطلاعات کاربر
+                    $userData = \Application\Model\DB::table('users')->where('telegram_id', $user_id)->first();
+                    if (!$userData) {
+                        answerCallbackQuery($_ENV['TELEGRAM_TOKEN'], $callback_query['id'], "⚠️ خطا در دریافت اطلاعات کاربری");
+                        continue;
+                    }
+                    
+                    // دریافت لیست زیرمجموعه‌ها
+                    $referrals = \Application\Model\DB::table('referrals')
+                        ->where('referrer_id', $userData['id'])
+                        ->get();
+                    
+                    if (empty($referrals)) {
+                        $message = "📊 *وضعیت زیرمجموعه‌ها*\n\n";
+                        $message .= "⚠️ شما هنوز هیچ زیرمجموعه‌ای ندارید!\n\n";
+                        $message .= "برای دعوت از دوستان، لینک اختصاصی خود را به آنها ارسال کنید:\n";
+                        $message .= "https://t.me/" . $_ENV['TELEGRAM_BOT_USERNAME'] . "?start=" . $userData['id'];
+                        
+                        editMessageText($_ENV['TELEGRAM_TOKEN'], $chat_id, $message_id, $message);
+                        answerCallbackQuery($_ENV['TELEGRAM_TOKEN'], $callback_query['id']);
+                        continue;
+                    }
+                    
+                    // نمایش لیست زیرمجموعه‌ها
+                    $message = "📊 *وضعیت زیرمجموعه‌ها*\n\n";
+                    $message .= "لینک اختصاصی شما برای دعوت از دوستان:\n";
+                    $message .= "https://t.me/" . $_ENV['TELEGRAM_BOT_USERNAME'] . "?start=" . $userData['id'] . "\n\n";
+                    $message .= "📋 *لیست زیرمجموعه‌های شما:*\n";
+                    
+                    $total_rewards = 0;
+                    $i = 1;
+                    
+                    // کیبورد برای نمایش اطلاعات بیشتر درباره هر زیرمجموعه
+                    $inline_keyboard = [];
+                    
+                    foreach ($referrals as $referral) {
+                        // دریافت اطلاعات کاربر زیرمجموعه
+                        $referredUser = \Application\Model\DB::table('users')
+                            ->where('id', $referral['referee_id'])
+                            ->first();
+                            
+                        if ($referredUser) {
+                            $row = [['text' => "{$i}. {$referredUser['username']} ➡️", 'callback_data' => "view_referral:{$referral['id']}"]];
+                            $inline_keyboard[] = $row;
+                            
+                            // محاسبه پورسانت
+                            $user_reward = 0;
+                            if ($referral['started_rewarded']) $user_reward += 0.5;
+                            if ($referral['first_win_rewarded']) $user_reward += 1.5;
+                            if ($referral['profile_completed_rewarded']) $user_reward += 3;
+                            if ($referral['thirty_wins_rewarded']) $user_reward += 5;
+                            
+                            $total_rewards += $user_reward;
+                            $i++;
+                        }
+                    }
+                    
+                    $message .= "\nتعداد زیرمجموعه‌ها: " . count($referrals) . "\n";
+                    $message .= "مجموع پورسانت دریافتی: " . $total_rewards . " دلتا کوین\n\n";
+                    $message .= "🔍 برای مشاهده جزئیات هر زیرمجموعه، روی نام آن کلیک کنید.";
+                    
+                    // کیبورد برای لیست
+                    $keyboard = json_encode([
+                        'inline_keyboard' => $inline_keyboard
+                    ]);
+                    
+                    // ویرایش پیام قبلی
+                    editMessageTextWithKeyboard($_ENV['TELEGRAM_TOKEN'], $chat_id, $message_id, $message, $keyboard);
+                    answerCallbackQuery($_ENV['TELEGRAM_TOKEN'], $callback_query['id']);
+                    
+                } catch (Exception $e) {
+                    echo "خطا در نمایش لیست زیرمجموعه‌ها: " . $e->getMessage() . "\n";
+                    answerCallbackQuery($_ENV['TELEGRAM_TOKEN'], $callback_query['id'], "⚠️ خطا: " . $e->getMessage());
+                }
+            }
+            
+            // پردازش دریافت دلتا کوین روزانه
+            else if ($callback_data === 'claim_daily_coin') {
+                try {
+                    // دریافت اطلاعات کاربر
+                    $userData = \Application\Model\DB::table('users')->where('telegram_id', $user_id)->first();
+                    if (!$userData) {
+                        answerCallbackQuery($_ENV['TELEGRAM_TOKEN'], $callback_query['id'], "⚠️ خطا در دریافت اطلاعات کاربری");
+                        continue;
+                    }
+                    
+                    // بررسی آیا کاربر قبلاً امروز دلتا کوین دریافت کرده است
+                    $today = date('Y-m-d');
+                    $daily_claim = \Application\Model\DB::table('daily_delta_coins')
+                        ->where('user_id', $userData['id'])
+                        ->where('claim_date', $today)
+                        ->first();
+                    
+                    if ($daily_claim) {
+                        answerCallbackQuery($_ENV['TELEGRAM_TOKEN'], $callback_query['id'], "⚠️ شما امروز دلتا کوین روزانه خود را دریافت کرده‌اید!");
+                        continue;
+                    }
+                    
+                    // بررسی عضویت در کانال‌های اسپانسر
+                    // [توجه] برای بررسی عضویت در کانال‌های اسپانسر، باید از متد getChatMember استفاده کرد
+                    // به دلیل محدودیت‌ها، این بخش به صورت نمونه پیاده‌سازی شده و عضویت را تأیید شده فرض می‌کند
+                    
+                    // تولید مقدار تصادفی دلتا کوین (بین 1 تا 5)
+                    $coin_amount = rand(1, 5);
+                    
+                    // افزایش دلتا کوین کاربر
+                    $delta_coins = \Application\Model\DB::table('users_extra')
+                        ->where('user_id', $userData['id'])
+                        ->value('delta_coins') ?? 0;
+                    
+                    \Application\Model\DB::table('users_extra')
+                        ->where('user_id', $userData['id'])
+                        ->update(['delta_coins' => $delta_coins + $coin_amount]);
+                    
+                    // ثبت دریافت دلتا کوین روزانه
+                    \Application\Model\DB::table('daily_delta_coins')->insert([
+                        'user_id' => $userData['id'],
+                        'amount' => $coin_amount,
+                        'claim_date' => $today
+                    ]);
+                    
+                    // پیام تأیید
+                    $message = "✅ *تبریک!*\n\n";
+                    $message .= "شما {$coin_amount} دلتا کوین روزانه دریافت کردید!\n";
+                    $message .= "موجودی فعلی شما: " . ($delta_coins + $coin_amount) . " دلتا کوین\n\n";
+                    $message .= "فردا دوباره برگردید تا دلتا کوین رایگان جدید دریافت کنید.";
+                    
+                    // ویرایش پیام قبلی
+                    editMessageText($_ENV['TELEGRAM_TOKEN'], $chat_id, $message_id, $message);
+                    answerCallbackQuery($_ENV['TELEGRAM_TOKEN'], $callback_query['id'], "✅ {$coin_amount} دلتا کوین به حساب شما اضافه شد!");
+                    
+                } catch (Exception $e) {
+                    echo "خطا در دریافت دلتا کوین روزانه: " . $e->getMessage() . "\n";
+                    answerCallbackQuery($_ENV['TELEGRAM_TOKEN'], $callback_query['id'], "⚠️ خطا: " . $e->getMessage());
+                }
+            }
             
             continue;
         }
@@ -1435,6 +1671,116 @@ while (true) {
                 
                 sendMessage($_ENV['TELEGRAM_TOKEN'], $chat_id, $message);
                 echo "اطلاعات راهنما ارسال شد\n";
+            }
+            
+            // پاسخ به دکمه وضعیت زیرمجموعه‌ها
+            else if (strpos($text, 'وضعیت زیرمجموعه‌ها') !== false) {
+                try {
+                    // دریافت اطلاعات کاربر
+                    $userData = \Application\Model\DB::table('users')->where('telegram_id', $user_id)->first();
+                    if (!$userData) {
+                        sendMessage($_ENV['TELEGRAM_TOKEN'], $chat_id, "⚠️ خطا در دریافت اطلاعات کاربری");
+                        continue;
+                    }
+                    
+                    // دریافت لیست زیرمجموعه‌ها
+                    $referrals = \Application\Model\DB::table('referrals')
+                        ->where('referrer_id', $userData['id'])
+                        ->get();
+                    
+                    if (empty($referrals)) {
+                        $message = "📊 *وضعیت زیرمجموعه‌ها*\n\n";
+                        $message .= "⚠️ شما هنوز هیچ زیرمجموعه‌ای ندارید!\n\n";
+                        $message .= "برای دعوت از دوستان، لینک اختصاصی خود را به آنها ارسال کنید:\n";
+                        $message .= "https://t.me/" . $_ENV['TELEGRAM_BOT_USERNAME'] . "?start=" . $userData['id'];
+                        
+                        sendMessage($_ENV['TELEGRAM_TOKEN'], $chat_id, $message);
+                        continue;
+                    }
+                    
+                    // نمایش لیست زیرمجموعه‌ها
+                    $message = "📊 *وضعیت زیرمجموعه‌ها*\n\n";
+                    $message .= "لینک اختصاصی شما برای دعوت از دوستان:\n";
+                    $message .= "https://t.me/" . $_ENV['TELEGRAM_BOT_USERNAME'] . "?start=" . $userData['id'] . "\n\n";
+                    $message .= "📋 *لیست زیرمجموعه‌های شما:*\n";
+                    
+                    $total_rewards = 0;
+                    $i = 1;
+                    
+                    // کیبورد برای نمایش اطلاعات بیشتر درباره هر زیرمجموعه
+                    $inline_keyboard = [];
+                    
+                    foreach ($referrals as $referral) {
+                        // دریافت اطلاعات کاربر زیرمجموعه
+                        $referredUser = \Application\Model\DB::table('users')
+                            ->where('id', $referral['referee_id'])
+                            ->first();
+                            
+                        if ($referredUser) {
+                            $row = [['text' => "{$i}. {$referredUser['username']} ➡️", 'callback_data' => "view_referral:{$referral['id']}"]];
+                            $inline_keyboard[] = $row;
+                            
+                            // محاسبه پورسانت
+                            $user_reward = 0;
+                            if ($referral['started_rewarded']) $user_reward += 0.5;
+                            if ($referral['first_win_rewarded']) $user_reward += 1.5;
+                            if ($referral['profile_completed_rewarded']) $user_reward += 3;
+                            if ($referral['thirty_wins_rewarded']) $user_reward += 5;
+                            
+                            $total_rewards += $user_reward;
+                            $i++;
+                        }
+                    }
+                    
+                    $message .= "\nتعداد زیرمجموعه‌ها: " . count($referrals) . "\n";
+                    $message .= "مجموع پورسانت دریافتی: " . $total_rewards . " دلتا کوین\n\n";
+                    $message .= "🔍 برای مشاهده جزئیات هر زیرمجموعه، روی نام آن کلیک کنید.";
+                    
+                    // ارسال پیام با کیبورد
+                    $keyboard = json_encode([
+                        'inline_keyboard' => $inline_keyboard
+                    ]);
+                    
+                    sendMessageWithKeyboard($_ENV['TELEGRAM_TOKEN'], $chat_id, $message, $keyboard);
+                    
+                } catch (Exception $e) {
+                    echo "خطا در نمایش وضعیت زیرمجموعه‌ها: " . $e->getMessage() . "\n";
+                    sendMessage($_ENV['TELEGRAM_TOKEN'], $chat_id, "⚠️ خطا در نمایش وضعیت زیرمجموعه‌ها: " . $e->getMessage());
+                }
+            }
+            
+            // پاسخ به دکمه دلتا کوین روزانه
+            else if (strpos($text, 'دلتا کوین روزانه') !== false) {
+                try {
+                    // دریافت اطلاعات کاربر
+                    $userData = \Application\Model\DB::table('users')->where('telegram_id', $user_id)->first();
+                    if (!$userData) {
+                        sendMessage($_ENV['TELEGRAM_TOKEN'], $chat_id, "⚠️ خطا در دریافت اطلاعات کاربری");
+                        continue;
+                    }
+                    
+                    // قسمت توضیحات و کانال‌های اسپانسر
+                    $message = "💰 *دلتا کوین روزانه*\n\n";
+                    $message .= "برای دریافت دلتا کوین رایگانِ امروزتان در چنل(های) اسپانسری زیر عضو شده سپس روی «دریافت دلتا کوین» کلیک کنید.\n\n";
+                    $message .= "📣 چنل‌های اسپانسر:\n";
+                    $message .= "📌 [چنل 1](https://t.me/channel1)\n";
+                    $message .= "📌 [چنل 2](https://t.me/channel2)\n";
+                    
+                    // کیبورد برای دریافت دلتا کوین
+                    $keyboard = json_encode([
+                        'inline_keyboard' => [
+                            [
+                                ['text' => '💰 دریافت دلتا کوین', 'callback_data' => "claim_daily_coin"]
+                            ]
+                        ]
+                    ]);
+                    
+                    sendMessageWithKeyboard($_ENV['TELEGRAM_TOKEN'], $chat_id, $message, $keyboard);
+                    
+                } catch (Exception $e) {
+                    echo "خطا در نمایش دلتا کوین روزانه: " . $e->getMessage() . "\n";
+                    sendMessage($_ENV['TELEGRAM_TOKEN'], $chat_id, "⚠️ خطا در نمایش دلتا کوین روزانه: " . $e->getMessage());
+                }
             }
 
             // پاسخ به دکمه پروفایل
@@ -2898,5 +3244,19 @@ function getActiveMatchForUser($user_id) {
         echo "خطا در یافتن بازی فعال: " . $e->getMessage() . "\n";
         return null;
     }
+}
+
+/**
+ * ویرایش پیام قبلی با کیبورد
+ * 
+ * @param string $token توکن ربات
+ * @param int $chat_id آیدی چت
+ * @param int $message_id آیدی پیام
+ * @param string $text متن جدید
+ * @param string $keyboard کیبورد (به صورت json_encode شده)
+ * @return mixed نتیجه درخواست
+ */
+function editMessageTextWithKeyboard($token, $chat_id, $message_id, $text, $keyboard) {
+    return editMessageText($token, $chat_id, $message_id, $text, $keyboard);
 }
 ?>

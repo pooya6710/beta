@@ -65,4 +65,17 @@ class Model
     {
         return self::$connection->lastInsertId();
     }
+    
+    /**
+     * دریافت شیء PDO برای اجرای دستورات SQL مستقیم
+     * 
+     * @return PDO
+     */
+    public static function getPdo()
+    {
+        if (!isset(self::$connection)) {
+            $instance = new self();
+        }
+        return self::$connection;
+    }
 }
