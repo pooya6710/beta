@@ -90,7 +90,8 @@ function getUpdates($token, $offset = 0) {
  * پردازش آپدیت با استفاده از کد اصلی ربات
  */
 function processUpdate($update) {
-    // ایجاد نمونه‌های مورد نیاز
+    // ایجاد نمونه‌های مورد نیاز که در متغیرهای سراسری گرفته می‌شوند
+    global $telegram, $locale, $keyboard, $option, $helper;
     $telegram = new Telegram($update);
     $locale = new Locale();
     $keyboard = new Keyboard();
