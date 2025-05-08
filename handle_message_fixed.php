@@ -17,20 +17,8 @@ if (!isset($step) || $step === null) {
 
 $text = $telegram->get()->message->text;
 
-// دیباگ: نمایش متن دریافتی از تلگرام
-echo "متن دریافتی از تلگرام: [$text]\n";
-// دیباگ: نمایش کد هگز متن دریافتی
-echo "کد هگز متن دریافتی: " . bin2hex($text) . "\n";
-
-// دیباگ: نمایش متن دکمه اول
+// حذف کدهای دیباگ برای افزایش سرعت
 $button_text = $locale->trans('keyboard.home.play_with_unknown');
-echo "متن دکمه 'بازی با ناشناس': [$button_text]\n";
-echo "کد هگز دکمه: " . bin2hex($button_text) . "\n";
-
-// بررسی مقایسه
-echo "مقایسه عادی: " . ($text == $button_text ? "یکسان" : "متفاوت") . "\n";
-echo "مقایسه تریم شده: " . (trim($text) == trim($button_text) ? "یکسان" : "متفاوت") . "\n";
-echo "strpos: " . (strpos($text, "بازی با ناشناس") !== false ? "پیدا شد" : "پیدا نشد") . "\n";
 $from_id = $telegram->get()->message->from->id;
 $first_name = $telegram->get()->message->from->first_name;
 
@@ -80,14 +68,9 @@ if (str_starts_with($text , '/start')){
 //    $telegram->sendMessage('%message.send_game_to_pv%')->inline_keyboard($keyboard->get('main.send_to_pv'))->send();
 //    exit();
 //}
-// چاپ اطلاعات دیباگ
-echo "متن دقیق دریافتی: [$text]\n";
-echo "متن دقیق ترجمه شده برای مقایسه: [" . $locale->trans('keyboard.home.play_with_unknown') . "]\n";
-
-// مقایسه دقیق‌تر با trim برای حذف فضاهای خالی اضافی
+// حذف پیام‌های دیباگ
 $translatedText = trim($locale->trans('keyboard.home.play_with_unknown'));
 $receivedText = trim($text);
-echo "مقایسه بعد از trim: " . ($receivedText == $translatedText ? "مساوی است" : "مساوی نیست") . "\n";
 
 // بررسی اگر متن دکمه 'بازی با ناشناس' است
 if ($text == '/start') {

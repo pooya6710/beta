@@ -31,8 +31,8 @@ while (true) {
     $updates = getUpdates($_ENV['TELEGRAM_TOKEN'], $lastUpdateId);
     
     if (!$updates || !isset($updates['result']) || empty($updates['result'])) {
-        // اگر آپدیتی نبود، 1 ثانیه صبر کن و دوباره تلاش کن
-        usleep(100000); // 0.1 second
+        // اگر آپدیتی نبود، کمتر صبر کن و دوباره تلاش کن (افزایش سرعت پاسخ‌دهی)
+        usleep(50000); // 0.05 second (کاهش زمان انتظار برای افزایش سرعت)
         continue;
     }
     
@@ -100,23 +100,9 @@ function processUpdate($update) {
     $user = new User($update);
     $step = new Step($update);
     
-    // چاپ اطلاعات بیشتر برای دیباگ
+    // چاپ فقط اطلاعات ضروری برای افزایش سرعت
     if (isset($update->message->text)) {
         echo "پیام دریافتی: {$update->message->text}\n";
-        
-        // چاپ اطلاعات بیشتر برای دیباگ
-        if ($update->message->text != '/start') {
-            echo "متن دریافتی از تلگرام: [{$update->message->text}]\n";
-            echo "کد هگز متن دریافتی: " . bin2hex($update->message->text) . "\n";
-            
-            $btn_text = $locale->trans('keyboard.home.play_with_unknown');
-            echo "متن دکمه 'بازی با ناشناس': [{$btn_text}]\n";
-            echo "کد هگز دکمه: " . bin2hex($btn_text) . "\n";
-            
-            echo "مقایسه عادی: " . ($update->message->text == $btn_text ? "یکسان" : "متفاوت") . "\n";
-            echo "مقایسه تریم شده: " . (trim($update->message->text) == trim($btn_text) ? "یکسان" : "متفاوت") . "\n";
-            echo "strpos: " . (strpos($update->message->text, "بازی با ناشناس") !== false ? "پیدا شد" : "پیدا نشد") . "\n";
-        }
     }
     
     $first_name = isset($update->message->from->first_name) ? $update->message->from->first_name : 'کاربر';
