@@ -1958,6 +1958,240 @@ while (true) {
                 }
             }
             
+            // پنل مدیریت
+            else if (strpos($text, 'پنل مدیریت') !== false) {
+                try {
+                    require_once __DIR__ . '/application/controllers/AdminController.php';
+                    $adminController = new \application\controllers\AdminController($user_id);
+                    
+                    // بررسی دسترسی ادمین
+                    if (!$adminController->isAdmin()) {
+                        sendMessage($_ENV['TELEGRAM_TOKEN'], $chat_id, "⚠️ شما دسترسی لازم برای این بخش را ندارید.");
+                        continue;
+                    }
+                    
+                    // منوی پنل مدیریت
+                    $admin_menu = "🛠️ *پنل مدیریت*\n\n";
+                    $admin_menu .= "به پنل مدیریت ربات خوش آمدید. لطفاً یکی از گزینه‌های زیر را انتخاب کنید:";
+                    
+                    // کیبورد مدیریت
+                    $admin_keyboard = json_encode([
+                        'keyboard' => [
+                            [['text' => '📊 آمار ربات']],
+                            [['text' => '📨 پیام همگانی'], ['text' => '📤 فوروارد همگانی']],
+                            [['text' => '👥 مدیریت ادمین‌ها']],
+                            [['text' => '🔗 قفل گروه/کانال']],
+                            [['text' => '🔙 بازگشت به منوی اصلی']]
+                        ],
+                        'resize_keyboard' => true
+                    ]);
+                    
+                    sendMessageWithKeyboard($_ENV['TELEGRAM_TOKEN'], $chat_id, $admin_menu, $admin_keyboard);
+                    
+                    // ذخیره وضعیت ادمین
+                    $userState = [
+                        'state' => 'admin_panel',
+                        'step' => 'main_menu'
+                    ];
+                    \Application\Model\DB::table('users')
+                        ->where('telegram_id', $user_id)
+                        ->update(['state' => json_encode($userState)]);
+                        
+                    echo "منوی پنل مدیریت ارسال شد\n";
+                } catch (Exception $e) {
+                    echo "خطا در پردازش پنل مدیریت: " . $e->getMessage() . "\n";
+                    sendMessage($_ENV['TELEGRAM_TOKEN'], $chat_id, "⚠️ خطا در پردازش درخواست: " . $e->getMessage());
+                }
+            }
+            
+            // آمار ربات
+            else if (strpos($text, 'آمار ربات') !== false) {
+                try {
+                    require_once __DIR__ . '/application/controllers/AdminController.php';
+                    $adminController = new \application\controllers\AdminController($user_id);
+                    
+                    // بررسی دسترسی ادمین
+                    if (!$adminController->isAdmin()) {
+                        sendMessage($_ENV['TELEGRAM_TOKEN'], $chat_id, "⚠️ شما دسترسی لازم برای این بخش را ندارید.");
+                        continue;
+                    }
+                    
+                    // دریافت آمار از دیتابیس
+                    $stats = $adminController->getStatistics();
+                    
+                    // ساخت متن آمار
+                    $stats_message = "📊 *آمار ربات*\n\n";
+                    $stats_message .= "👥 تعداد کل کاربران: {$stats['total_users']}\n";
+                    $stats_message .= "👤 کاربران فعال امروز: {$stats['active_users_today']}\n";
+                    $stats_message .= "🎮 تعداد کل بازی‌ها: {$stats['total_games']}\n";
+                    $stats_message .= "🎲 بازی‌های فعال: {$stats['active_games']}\n";
+                    $stats_message .= "🎯 بازی‌های امروز: {$stats['games_today']}\n";
+                    $stats_message .= "💰 میانگین دلتا کوین‌ها: {$stats['avg_delta_coins']}\n";
+                    
+                    sendMessage($_ENV['TELEGRAM_TOKEN'], $chat_id, $stats_message);
+                    echo "آمار ربات ارسال شد\n";
+                } catch (Exception $e) {
+                    echo "خطا در پردازش آمار ربات: " . $e->getMessage() . "\n";
+                    sendMessage($_ENV['TELEGRAM_TOKEN'], $chat_id, "⚠️ خطا در پردازش درخواست: " . $e->getMessage());
+                }
+            }
+            
+            // پیام همگانی
+            else if (strpos($text, 'پیام همگانی') !== false) {
+                try {
+                    require_once __DIR__ . '/application/controllers/AdminController.php';
+                    $adminController = new \application\controllers\AdminController($user_id);
+                    
+                    // بررسی دسترسی ادمین
+                    if (!$adminController->isAdmin() || !$adminController->hasPermission('can_send_broadcasts')) {
+                        sendMessage($_ENV['TELEGRAM_TOKEN'], $chat_id, "⚠️ شما دسترسی لازم برای این بخش را ندارید.");
+                        continue;
+                    }
+                    
+                    $message = "📨 *ارسال پیام همگانی*\n\n";
+                    $message .= "لطفاً پیامی که می‌خواهید به تمام کاربران ارسال شود را ارسال کنید.\n";
+                    $message .= "پیام می‌تواند شامل متن، عکس، فایل صوتی، ویدئو یا فایل باشد.\n\n";
+                    $message .= "⚠️ توجه: این پیام به تمام کاربران ربات ارسال خواهد شد.\n";
+                    $message .= "برای لغو، دکمه «لغو» را بزنید.";
+                    
+                    // کیبورد لغو
+                    $cancel_keyboard = json_encode([
+                        'keyboard' => [
+                            [['text' => 'لغو ❌']]
+                        ],
+                        'resize_keyboard' => true
+                    ]);
+                    
+                    sendMessageWithKeyboard($_ENV['TELEGRAM_TOKEN'], $chat_id, $message, $cancel_keyboard);
+                    
+                    // ذخیره وضعیت ادمین
+                    $userState = [
+                        'state' => 'admin_panel',
+                        'step' => 'waiting_for_broadcast_message'
+                    ];
+                    \Application\Model\DB::table('users')
+                        ->where('telegram_id', $user_id)
+                        ->update(['state' => json_encode($userState)]);
+                        
+                    echo "درخواست ارسال پیام همگانی دریافت شد\n";
+                } catch (Exception $e) {
+                    echo "خطا در پردازش پیام همگانی: " . $e->getMessage() . "\n";
+                    sendMessage($_ENV['TELEGRAM_TOKEN'], $chat_id, "⚠️ خطا در پردازش درخواست: " . $e->getMessage());
+                }
+            }
+            
+            // مدیریت ادمین‌ها
+            else if (strpos($text, 'مدیریت ادمین‌ها') !== false) {
+                try {
+                    require_once __DIR__ . '/application/controllers/AdminController.php';
+                    $adminController = new \application\controllers\AdminController($user_id);
+                    
+                    // بررسی دسترسی ادمین
+                    if (!$adminController->isAdmin() || !$adminController->hasPermission('can_manage_admins')) {
+                        sendMessage($_ENV['TELEGRAM_TOKEN'], $chat_id, "⚠️ شما دسترسی لازم برای این بخش را ندارید.");
+                        continue;
+                    }
+                    
+                    $message = "👤 *مدیریت ادمین‌ها*\n\n";
+                    $message .= "لطفاً آیدی عددی یا نام کاربری شخص مورد نظر را وارد کنید:";
+                    
+                    // کیبورد لغو
+                    $cancel_keyboard = json_encode([
+                        'keyboard' => [
+                            [['text' => 'لغو ❌']]
+                        ],
+                        'resize_keyboard' => true
+                    ]);
+                    
+                    sendMessageWithKeyboard($_ENV['TELEGRAM_TOKEN'], $chat_id, $message, $cancel_keyboard);
+                    
+                    // ذخیره وضعیت ادمین
+                    $userState = [
+                        'state' => 'admin_panel',
+                        'step' => 'waiting_for_admin_id'
+                    ];
+                    \Application\Model\DB::table('users')
+                        ->where('telegram_id', $user_id)
+                        ->update(['state' => json_encode($userState)]);
+                        
+                    echo "درخواست مدیریت ادمین‌ها دریافت شد\n";
+                } catch (Exception $e) {
+                    echo "خطا در پردازش مدیریت ادمین‌ها: " . $e->getMessage() . "\n";
+                    sendMessage($_ENV['TELEGRAM_TOKEN'], $chat_id, "⚠️ خطا در پردازش درخواست: " . $e->getMessage());
+                }
+            }
+            
+            // قفل گروه/کانال
+            else if (strpos($text, 'قفل گروه/کانال') !== false) {
+                try {
+                    require_once __DIR__ . '/application/controllers/AdminController.php';
+                    $adminController = new \application\controllers\AdminController($user_id);
+                    
+                    // بررسی دسترسی ادمین
+                    if (!$adminController->isAdmin()) {
+                        sendMessage($_ENV['TELEGRAM_TOKEN'], $chat_id, "⚠️ شما دسترسی لازم برای این بخش را ندارید.");
+                        continue;
+                    }
+                    
+                    $message = "🔗 *قفل گروه/کانال*\n\n";
+                    $message .= "لطفاً آیدی یا لینک گروه/کانال مورد نظر را وارد کنید:";
+                    
+                    // کیبورد لغو
+                    $cancel_keyboard = json_encode([
+                        'keyboard' => [
+                            [['text' => 'لغو ❌']]
+                        ],
+                        'resize_keyboard' => true
+                    ]);
+                    
+                    sendMessageWithKeyboard($_ENV['TELEGRAM_TOKEN'], $chat_id, $message, $cancel_keyboard);
+                    
+                    // ذخیره وضعیت ادمین
+                    $userState = [
+                        'state' => 'admin_panel',
+                        'step' => 'waiting_for_channel_id'
+                    ];
+                    \Application\Model\DB::table('users')
+                        ->where('telegram_id', $user_id)
+                        ->update(['state' => json_encode($userState)]);
+                        
+                    echo "درخواست قفل گروه/کانال دریافت شد\n";
+                } catch (Exception $e) {
+                    echo "خطا در پردازش قفل گروه/کانال: " . $e->getMessage() . "\n";
+                    sendMessage($_ENV['TELEGRAM_TOKEN'], $chat_id, "⚠️ خطا در پردازش درخواست: " . $e->getMessage());
+                }
+            }
+            
+            // بازگشت به منوی اصلی از پنل مدیریت
+            else if (strpos($text, 'بازگشت به منوی اصلی') !== false) {
+                try {
+                    // ارسال منوی اصلی
+                    $keyboard = json_encode([
+                        'keyboard' => [
+                            [['text' => '👀 بازی با ناشناس'], ['text' => '🏆شرکت در مسابقه 8 نفره + جایزه🎁']],
+                            [['text' => '👥 دوستان'], ['text' => '💸 کسب درآمد 💸']],
+                            [['text' => '👤 حساب کاربری'], ['text' => '🏆نفرات برتر•']],
+                            [['text' => '👨‍👦‍👦 وضعیت زیرمجموعه‌ها'], ['text' => '💰 دلتا کوین روزانه']],
+                            [['text' => '• پشتیبانی👨‍💻'], ['text' => '⁉️راهنما •']],
+                            [['text' => '⚙️ پنل مدیریت']]
+                        ],
+                        'resize_keyboard' => true
+                    ]);
+                    
+                    sendMessageWithKeyboard($_ENV['TELEGRAM_TOKEN'], $chat_id, "🎮 منوی اصلی:", $keyboard);
+                    
+                    // حذف وضعیت کاربر
+                    \Application\Model\DB::table('users')
+                        ->where('telegram_id', $user_id)
+                        ->update(['state' => null]);
+                        
+                    echo "بازگشت به منوی اصلی\n";
+                } catch (Exception $e) {
+                    echo "خطا در بازگشت به منوی اصلی: " . $e->getMessage() . "\n";
+                    sendMessage($_ENV['TELEGRAM_TOKEN'], $chat_id, "⚠️ خطا در پردازش درخواست: " . $e->getMessage());
+                }
+            }
+            
             // پروفایل کاربر
             else if (strpos($text, 'پروفایل') !== false) {
                 try {
@@ -3058,13 +3292,27 @@ while (true) {
                 
                 // ارسال مجدد منوی اصلی - اختیاری
                 try {
+                    // بررسی آیا کاربر ادمین است یا خیر
+                    require_once __DIR__ . '/application/controllers/AdminController.php';
+                    $adminController = new \application\controllers\AdminController($user_id);
+                    $isAdmin = $adminController->isAdmin();
+                    
+                    // ایجاد کیبورد متناسب با دسترسی کاربر
+                    $keyboard_buttons = [
+                        [['text' => '👀 بازی با ناشناس'], ['text' => '🏆شرکت در مسابقه 8 نفره + جایزه🎁']],
+                        [['text' => '👥 دوستان'], ['text' => '💸 کسب درآمد 💸']],
+                        [['text' => '👤 حساب کاربری'], ['text' => '🏆نفرات برتر•']],
+                        [['text' => '👨‍👦‍👦 وضعیت زیرمجموعه‌ها'], ['text' => '💰 دلتا کوین روزانه']],
+                        [['text' => '• پشتیبانی👨‍💻'], ['text' => '⁉️راهنما •']]
+                    ];
+                    
+                    // اگر کاربر ادمین باشد، دکمه پنل مدیریت را اضافه می‌کنیم
+                    if ($isAdmin) {
+                        $keyboard_buttons[] = [['text' => '⚙️ پنل مدیریت']];
+                    }
+                    
                     $keyboard = json_encode([
-                        'keyboard' => [
-                            [['text' => '👀 بازی با ناشناس'], ['text' => '🏆شرکت در مسابقه 8 نفره + جایزه🎁']],
-                            [['text' => '👥 دوستان'], ['text' => '💸 کسب درآمد 💸']],
-                            [['text' => '👤 حساب کاربری'], ['text' => '🏆نفرات برتر•']],
-                            [['text' => '• پشتیبانی👨‍💻'], ['text' => '⁉️راهنما •']]
-                        ],
+                        'keyboard' => $keyboard_buttons,
                         'resize_keyboard' => true
                     ]);
                     
