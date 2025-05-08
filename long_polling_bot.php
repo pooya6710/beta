@@ -913,6 +913,597 @@ while (true) {
                 
                 $userState = json_decode($userData['state'], true);
                 
+                // پردازش وضعیت‌های پنل مدیریت
+                if ($userState['state'] === 'admin_panel') {
+                    require_once __DIR__ . '/application/controllers/AdminController.php';
+                    $adminController = new \application\controllers\AdminController($user_id);
+                    
+                    // بررسی دسترسی ادمین
+                    if (!$adminController->isAdmin()) {
+                        sendMessage($_ENV['TELEGRAM_TOKEN'], $chat_id, "⚠️ شما دسترسی لازم برای این بخش را ندارید.");
+                        continue;
+                    }
+                    
+                    // پردازش مراحل مختلف پنل مدیریت
+                    switch ($userState['step']) {
+                        // منتظر دریافت پیام همگانی
+                        case 'waiting_for_broadcast_message':
+                            // بررسی آیا کاربر درخواست لغو کرده است
+                            if (strpos($text, 'لغو') !== false) {
+                                // بازگشت به منوی پنل مدیریت
+                                $admin_menu = "🛠️ *پنل مدیریت*\n\n";
+                                $admin_menu .= "به پنل مدیریت ربات خوش آمدید. لطفاً یکی از گزینه‌های زیر را انتخاب کنید:";
+                                
+                                // کیبورد مدیریت
+                                $admin_keyboard = json_encode([
+                                    'keyboard' => [
+                                        [['text' => '📊 آمار ربات']],
+                                        [['text' => '📨 پیام همگانی'], ['text' => '📤 فوروارد همگانی']],
+                                        [['text' => '👥 مدیریت ادمین‌ها']],
+                                        [['text' => '🔗 قفل گروه/کانال']],
+                                        [['text' => '🔙 بازگشت به منوی اصلی']]
+                                    ],
+                                    'resize_keyboard' => true
+                                ]);
+                                
+                                sendMessageWithKeyboard($_ENV['TELEGRAM_TOKEN'], $chat_id, $admin_menu, $admin_keyboard);
+                                
+                                // تغییر وضعیت کاربر
+                                $userState['step'] = 'main_menu';
+                                \Application\Model\DB::table('users')
+                                    ->where('telegram_id', $user_id)
+                                    ->update(['state' => json_encode($userState)]);
+                                    
+                                echo "درخواست پیام همگانی لغو شد\n";
+                                continue;
+                            }
+                            
+                            // دریافت پیام همگانی
+                            $message = "📢 *تأییدیه ارسال پیام همگانی*\n\n";
+                            $message .= "پیام شما برای ارسال همگانی آماده است. برای تأیید و ارسال، دکمه «ارسال» را بزنید.\n\n";
+                            $message .= "📝 *متن پیام:*\n\n";
+                            $message .= $text;
+                            
+                            // کیبورد تأیید یا لغو
+                            $confirm_keyboard = json_encode([
+                                'keyboard' => [
+                                    [['text' => '✅ ارسال پیام به همه کاربران']],
+                                    [['text' => '❌ لغو ارسال']]
+                                ],
+                                'resize_keyboard' => true
+                            ]);
+                            
+                            sendMessageWithKeyboard($_ENV['TELEGRAM_TOKEN'], $chat_id, $message, $confirm_keyboard);
+                            
+                            // ذخیره متن پیام در وضعیت
+                            $userState['broadcast_message'] = $text;
+                            $userState['step'] = 'confirm_broadcast';
+                            
+                            \Application\Model\DB::table('users')
+                                ->where('telegram_id', $user_id)
+                                ->update(['state' => json_encode($userState)]);
+                                
+                            echo "پیام همگانی دریافت شد\n";
+                            break;
+                        
+                        // تأیید یا لغو ارسال پیام همگانی
+                        case 'confirm_broadcast':
+                            if (strpos($text, 'ارسال پیام به همه کاربران') !== false) {
+                                // دریافت لیست کاربران از دیتابیس
+                                $users = \Application\Model\DB::table('users')->select('*')->get();
+                                
+                                // شروع ارسال پیام همگانی
+                                sendMessage($_ENV['TELEGRAM_TOKEN'], $chat_id, "🕒 در حال ارسال پیام به کاربران...");
+                                
+                                // ثبت اطلاعات پیام در دیتابیس
+                                $broadcast_message = [
+                                    'admin_id' => $userData['id'],
+                                    'message_type' => 'text',
+                                    'message_text' => $userState['broadcast_message'],
+                                    'status' => 'processing'
+                                ];
+                                
+                                $broadcast_id = \Application\Model\DB::table('broadcast_messages')->insert($broadcast_message);
+                                
+                                // ارسال پیام به تمام کاربران
+                                $sent_count = 0;
+                                $failed_count = 0;
+                                
+                                foreach ($users as $user) {
+                                    try {
+                                        sendMessage($_ENV['TELEGRAM_TOKEN'], $user['telegram_id'], $userState['broadcast_message']);
+                                        $sent_count++;
+                                        
+                                        // به روز رسانی هر 10 کاربر یک بار
+                                        if ($sent_count % 10 === 0) {
+                                            sendMessage($_ENV['TELEGRAM_TOKEN'], $chat_id, "📨 در حال ارسال پیام... {$sent_count} پیام ارسال شده");
+                                        }
+                                        
+                                        // کمی تأخیر برای جلوگیری از محدودیت‌های تلگرام
+                                        usleep(200000); // 0.2 ثانیه تأخیر
+                                    } catch (Exception $e) {
+                                        $failed_count++;
+                                        echo "خطا در ارسال پیام به کاربر {$user['telegram_id']}: " . $e->getMessage() . "\n";
+                                    }
+                                }
+                                
+                                // به روز رسانی وضعیت پیام در دیتابیس
+                                \Application\Model\DB::table('broadcast_messages')
+                                    ->where('id', $broadcast_id)
+                                    ->update([
+                                        'status' => 'completed',
+                                        'total_sent' => $sent_count,
+                                        'total_failed' => $failed_count,
+                                        'completed_at' => date('Y-m-d H:i:s')
+                                    ]);
+                                
+                                // ارسال گزارش نهایی
+                                $summary = "✅ *پیام همگانی ارسال شد*\n\n";
+                                $summary .= "📊 آمار ارسال:\n";
+                                $summary .= "• تعداد کاربران: " . count($users) . "\n";
+                                $summary .= "• ارسال موفق: {$sent_count}\n";
+                                $summary .= "• ارسال ناموفق: {$failed_count}\n";
+                                $summary .= "• زمان اتمام: " . date('Y-m-d H:i:s');
+                                
+                                // بازگشت به منوی مدیریت
+                                $admin_keyboard = json_encode([
+                                    'keyboard' => [
+                                        [['text' => '📊 آمار ربات']],
+                                        [['text' => '📨 پیام همگانی'], ['text' => '📤 فوروارد همگانی']],
+                                        [['text' => '👥 مدیریت ادمین‌ها']],
+                                        [['text' => '🔗 قفل گروه/کانال']],
+                                        [['text' => '🔙 بازگشت به منوی اصلی']]
+                                    ],
+                                    'resize_keyboard' => true
+                                ]);
+                                
+                                sendMessageWithKeyboard($_ENV['TELEGRAM_TOKEN'], $chat_id, $summary, $admin_keyboard);
+                                
+                                // به روز رسانی وضعیت کاربر
+                                $userState['step'] = 'main_menu';
+                                unset($userState['broadcast_message']);
+                                
+                                \Application\Model\DB::table('users')
+                                    ->where('telegram_id', $user_id)
+                                    ->update(['state' => json_encode($userState)]);
+                                    
+                                echo "پیام همگانی با موفقیت ارسال شد\n";
+                            } else if (strpos($text, 'لغو ارسال') !== false) {
+                                // بازگشت به منوی پنل مدیریت
+                                $admin_menu = "🛠️ *پنل مدیریت*\n\n";
+                                $admin_menu .= "به پنل مدیریت ربات خوش آمدید. لطفاً یکی از گزینه‌های زیر را انتخاب کنید:";
+                                
+                                // کیبورد مدیریت
+                                $admin_keyboard = json_encode([
+                                    'keyboard' => [
+                                        [['text' => '📊 آمار ربات']],
+                                        [['text' => '📨 پیام همگانی'], ['text' => '📤 فوروارد همگانی']],
+                                        [['text' => '👥 مدیریت ادمین‌ها']],
+                                        [['text' => '🔗 قفل گروه/کانال']],
+                                        [['text' => '🔙 بازگشت به منوی اصلی']]
+                                    ],
+                                    'resize_keyboard' => true
+                                ]);
+                                
+                                sendMessageWithKeyboard($_ENV['TELEGRAM_TOKEN'], $chat_id, "❌ ارسال پیام همگانی لغو شد.", $admin_keyboard);
+                                
+                                // تغییر وضعیت کاربر
+                                $userState['step'] = 'main_menu';
+                                unset($userState['broadcast_message']);
+                                
+                                \Application\Model\DB::table('users')
+                                    ->where('telegram_id', $user_id)
+                                    ->update(['state' => json_encode($userState)]);
+                                    
+                                echo "ارسال پیام همگانی لغو شد\n";
+                            }
+                            break;
+                            
+                        // منتظر دریافت آیدی ادمین جدید
+                        case 'waiting_for_admin_id':
+                            // بررسی آیا کاربر درخواست لغو کرده است
+                            if (strpos($text, 'لغو') !== false) {
+                                // بازگشت به منوی پنل مدیریت
+                                $admin_menu = "🛠️ *پنل مدیریت*\n\n";
+                                $admin_menu .= "به پنل مدیریت ربات خوش آمدید. لطفاً یکی از گزینه‌های زیر را انتخاب کنید:";
+                                
+                                // کیبورد مدیریت
+                                $admin_keyboard = json_encode([
+                                    'keyboard' => [
+                                        [['text' => '📊 آمار ربات']],
+                                        [['text' => '📨 پیام همگانی'], ['text' => '📤 فوروارد همگانی']],
+                                        [['text' => '👥 مدیریت ادمین‌ها']],
+                                        [['text' => '🔗 قفل گروه/کانال']],
+                                        [['text' => '🔙 بازگشت به منوی اصلی']]
+                                    ],
+                                    'resize_keyboard' => true
+                                ]);
+                                
+                                sendMessageWithKeyboard($_ENV['TELEGRAM_TOKEN'], $chat_id, $admin_menu, $admin_keyboard);
+                                
+                                // تغییر وضعیت کاربر
+                                $userState['step'] = 'main_menu';
+                                \Application\Model\DB::table('users')
+                                    ->where('telegram_id', $user_id)
+                                    ->update(['state' => json_encode($userState)]);
+                                    
+                                echo "درخواست مدیریت ادمین لغو شد\n";
+                                continue;
+                            }
+                            
+                            // جستجوی کاربر با آیدی یا نام کاربری
+                            $searchQuery = $text;
+                            
+                            // بررسی آیا ورودی یک عدد (آیدی تلگرام) است
+                            if (is_numeric($searchQuery)) {
+                                $targetUser = \Application\Model\DB::table('users')
+                                    ->where('telegram_id', $searchQuery)
+                                    ->first();
+                            } else {
+                                // جستجو بر اساس نام کاربری
+                                $targetUser = \Application\Model\DB::table('users')
+                                    ->where('username', 'LIKE', '%' . $searchQuery . '%')
+                                    ->first();
+                            }
+                            
+                            if (!$targetUser) {
+                                sendMessage($_ENV['TELEGRAM_TOKEN'], $chat_id, "⚠️ کاربر مورد نظر یافت نشد. لطفاً دوباره تلاش کنید یا برای لغو، دکمه «لغو» را بزنید.");
+                                echo "کاربر مورد نظر برای مدیریت ادمین یافت نشد\n";
+                                continue;
+                            }
+                            
+                            // ذخیره اطلاعات کاربر هدف در وضعیت
+                            $userState['target_user_id'] = $targetUser['id'];
+                            $userState['target_telegram_id'] = $targetUser['telegram_id'];
+                            $userState['step'] = 'select_admin_permissions';
+                            
+                            \Application\Model\DB::table('users')
+                                ->where('telegram_id', $user_id)
+                                ->update(['state' => json_encode($userState)]);
+                                
+                            // نمایش اطلاعات کاربر و درخواست انتخاب دسترسی‌ها
+                            $user_info = "👤 *اطلاعات کاربر*\n\n";
+                            $user_info .= "• نام کاربری: {$targetUser['username']}\n";
+                            $user_info .= "• آیدی تلگرام: {$targetUser['telegram_id']}\n";
+                            $user_info .= "• نوع کاربر: {$targetUser['type']}\n\n";
+                            $user_info .= "لطفاً دسترسی‌های مورد نظر را انتخاب کنید:";
+                            
+                            // کیبورد انتخاب دسترسی‌ها
+                            $permissions_keyboard = json_encode([
+                                'keyboard' => [
+                                    [['text' => '✅ تبدیل به ادمین'], ['text' => '❌ حذف دسترسی ادمین']],
+                                    [['text' => '✅ ارسال پیام همگانی'], ['text' => '❌ بدون ارسال پیام همگانی']],
+                                    [['text' => '✅ مدیریت ادمین‌ها'], ['text' => '❌ بدون مدیریت ادمین‌ها']],
+                                    [['text' => '✅ مدیریت بازی‌ها'], ['text' => '❌ بدون مدیریت بازی‌ها']],
+                                    [['text' => '✅ مدیریت کاربران'], ['text' => '❌ بدون مدیریت کاربران']],
+                                    [['text' => '💾 ذخیره تغییرات'], ['text' => 'لغو ❌']]
+                                ],
+                                'resize_keyboard' => true
+                            ]);
+                            
+                            sendMessageWithKeyboard($_ENV['TELEGRAM_TOKEN'], $chat_id, $user_info, $permissions_keyboard);
+                            
+                            // ذخیره وضعیت پیش‌فرض دسترسی‌ها
+                            $userState['permissions'] = [
+                                'is_admin' => false,
+                                'can_send_broadcasts' => false,
+                                'can_manage_admins' => false,
+                                'can_manage_games' => false,
+                                'can_manage_users' => false
+                            ];
+                            
+                            \Application\Model\DB::table('users')
+                                ->where('telegram_id', $user_id)
+                                ->update(['state' => json_encode($userState)]);
+                                
+                            echo "فرم مدیریت دسترسی‌های ادمین ارسال شد\n";
+                            break;
+                            
+                        // انتخاب دسترسی‌های ادمین
+                        case 'select_admin_permissions':
+                            // بررسی آیا کاربر درخواست لغو کرده است
+                            if (strpos($text, 'لغو') !== false) {
+                                // بازگشت به منوی پنل مدیریت
+                                $admin_menu = "🛠️ *پنل مدیریت*\n\n";
+                                $admin_menu .= "به پنل مدیریت ربات خوش آمدید. لطفاً یکی از گزینه‌های زیر را انتخاب کنید:";
+                                
+                                // کیبورد مدیریت
+                                $admin_keyboard = json_encode([
+                                    'keyboard' => [
+                                        [['text' => '📊 آمار ربات']],
+                                        [['text' => '📨 پیام همگانی'], ['text' => '📤 فوروارد همگانی']],
+                                        [['text' => '👥 مدیریت ادمین‌ها']],
+                                        [['text' => '🔗 قفل گروه/کانال']],
+                                        [['text' => '🔙 بازگشت به منوی اصلی']]
+                                    ],
+                                    'resize_keyboard' => true
+                                ]);
+                                
+                                sendMessageWithKeyboard($_ENV['TELEGRAM_TOKEN'], $chat_id, $admin_menu, $admin_keyboard);
+                                
+                                // تغییر وضعیت کاربر
+                                $userState['step'] = 'main_menu';
+                                unset($userState['target_user_id']);
+                                unset($userState['target_telegram_id']);
+                                unset($userState['permissions']);
+                                
+                                \Application\Model\DB::table('users')
+                                    ->where('telegram_id', $user_id)
+                                    ->update(['state' => json_encode($userState)]);
+                                    
+                                echo "انتخاب دسترسی‌های ادمین لغو شد\n";
+                                continue;
+                            }
+                            
+                            // بررسی و به روز رسانی دسترسی‌ها بر اساس انتخاب کاربر
+                            if (strpos($text, 'تبدیل به ادمین') !== false) {
+                                $userState['permissions']['is_admin'] = true;
+                            } else if (strpos($text, 'حذف دسترسی ادمین') !== false) {
+                                $userState['permissions']['is_admin'] = false;
+                            } else if (strpos($text, 'ارسال پیام همگانی') !== false) {
+                                $userState['permissions']['can_send_broadcasts'] = true;
+                            } else if (strpos($text, 'بدون ارسال پیام همگانی') !== false) {
+                                $userState['permissions']['can_send_broadcasts'] = false;
+                            } else if (strpos($text, 'مدیریت ادمین‌ها') !== false && strpos($text, 'بدون') === false) {
+                                $userState['permissions']['can_manage_admins'] = true;
+                            } else if (strpos($text, 'بدون مدیریت ادمین‌ها') !== false) {
+                                $userState['permissions']['can_manage_admins'] = false;
+                            } else if (strpos($text, 'مدیریت بازی‌ها') !== false && strpos($text, 'بدون') === false) {
+                                $userState['permissions']['can_manage_games'] = true;
+                            } else if (strpos($text, 'بدون مدیریت بازی‌ها') !== false) {
+                                $userState['permissions']['can_manage_games'] = false;
+                            } else if (strpos($text, 'مدیریت کاربران') !== false && strpos($text, 'بدون') === false) {
+                                $userState['permissions']['can_manage_users'] = true;
+                            } else if (strpos($text, 'بدون مدیریت کاربران') !== false) {
+                                $userState['permissions']['can_manage_users'] = false;
+                            } else if (strpos($text, 'ذخیره تغییرات') !== false) {
+                                // اعمال تغییرات به دیتابیس
+                                if ($userState['permissions']['is_admin']) {
+                                    // تغییر نوع کاربر به ادمین
+                                    \Application\Model\DB::table('users')
+                                        ->where('id', $userState['target_user_id'])
+                                        ->update(['type' => 'admin']);
+                                        
+                                    // حذف دسترسی‌های قبلی
+                                    \Application\Model\DB::table('admin_permissions')
+                                        ->where('user_id', $userState['target_user_id'])
+                                        ->delete();
+                                        
+                                    // اضافه کردن دسترسی‌های جدید
+                                    $permissionsData = [
+                                        'user_id' => $userState['target_user_id'],
+                                        'role' => 'admin',
+                                        'can_send_broadcasts' => $userState['permissions']['can_send_broadcasts'],
+                                        'can_manage_admins' => $userState['permissions']['can_manage_admins'],
+                                        'can_manage_games' => $userState['permissions']['can_manage_games'],
+                                        'can_manage_users' => $userState['permissions']['can_manage_users'],
+                                        'can_view_statistics' => true
+                                    ];
+                                    
+                                    \Application\Model\DB::table('admin_permissions')->insert($permissionsData);
+                                    
+                                    // ارسال پیام تأیید
+                                    sendMessage($_ENV['TELEGRAM_TOKEN'], $chat_id, "✅ دسترسی‌های ادمین با موفقیت ثبت شد.");
+                                    
+                                    // ارسال پیام به کاربر مورد نظر
+                                    $notification = "🎖 *اطلاعیه ارتقاء سطح دسترسی*\n\n";
+                                    $notification .= "شما به عنوان ادمین ربات انتخاب شده‌اید!\n";
+                                    $notification .= "برای دسترسی به پنل مدیریت، می‌توانید از دکمه «⚙️ پنل مدیریت» در منوی اصلی استفاده کنید.";
+                                    
+                                    sendMessage($_ENV['TELEGRAM_TOKEN'], $userState['target_telegram_id'], $notification);
+                                } else {
+                                    // حذف دسترسی‌های ادمین
+                                    \Application\Model\DB::table('users')
+                                        ->where('id', $userState['target_user_id'])
+                                        ->update(['type' => 'user']);
+                                        
+                                    \Application\Model\DB::table('admin_permissions')
+                                        ->where('user_id', $userState['target_user_id'])
+                                        ->delete();
+                                        
+                                    // ارسال پیام تأیید
+                                    sendMessage($_ENV['TELEGRAM_TOKEN'], $chat_id, "✅ دسترسی‌های ادمین با موفقیت حذف شد.");
+                                    
+                                    // ارسال پیام به کاربر مورد نظر
+                                    sendMessage($_ENV['TELEGRAM_TOKEN'], $userState['target_telegram_id'], "⚠️ *اطلاعیه تغییر سطح دسترسی*\n\nدسترسی ادمین شما در ربات لغو شده است.");
+                                }
+                                
+                                // بازگشت به منوی پنل مدیریت
+                                $admin_menu = "🛠️ *پنل مدیریت*\n\n";
+                                $admin_menu .= "به پنل مدیریت ربات خوش آمدید. لطفاً یکی از گزینه‌های زیر را انتخاب کنید:";
+                                
+                                // کیبورد مدیریت
+                                $admin_keyboard = json_encode([
+                                    'keyboard' => [
+                                        [['text' => '📊 آمار ربات']],
+                                        [['text' => '📨 پیام همگانی'], ['text' => '📤 فوروارد همگانی']],
+                                        [['text' => '👥 مدیریت ادمین‌ها']],
+                                        [['text' => '🔗 قفل گروه/کانال']],
+                                        [['text' => '🔙 بازگشت به منوی اصلی']]
+                                    ],
+                                    'resize_keyboard' => true
+                                ]);
+                                
+                                sendMessageWithKeyboard($_ENV['TELEGRAM_TOKEN'], $chat_id, $admin_menu, $admin_keyboard);
+                                
+                                // تغییر وضعیت کاربر
+                                $userState['step'] = 'main_menu';
+                                unset($userState['target_user_id']);
+                                unset($userState['target_telegram_id']);
+                                unset($userState['permissions']);
+                                
+                                \Application\Model\DB::table('users')
+                                    ->where('telegram_id', $user_id)
+                                    ->update(['state' => json_encode($userState)]);
+                                    
+                                echo "دسترسی‌های ادمین ذخیره شد\n";
+                                continue;
+                            }
+                            
+                            // به روز رسانی وضعیت کاربر برای ذخیره دسترسی‌ها
+                            \Application\Model\DB::table('users')
+                                ->where('telegram_id', $user_id)
+                                ->update(['state' => json_encode($userState)]);
+                                
+                            // ارسال پیام وضعیت دسترسی‌ها
+                            $status = "🔄 *وضعیت دسترسی‌ها:*\n\n";
+                            $status .= "• ادمین: " . ($userState['permissions']['is_admin'] ? "✅" : "❌") . "\n";
+                            $status .= "• ارسال پیام همگانی: " . ($userState['permissions']['can_send_broadcasts'] ? "✅" : "❌") . "\n";
+                            $status .= "• مدیریت ادمین‌ها: " . ($userState['permissions']['can_manage_admins'] ? "✅" : "❌") . "\n";
+                            $status .= "• مدیریت بازی‌ها: " . ($userState['permissions']['can_manage_games'] ? "✅" : "❌") . "\n";
+                            $status .= "• مدیریت کاربران: " . ($userState['permissions']['can_manage_users'] ? "✅" : "❌") . "\n\n";
+                            $status .= "لطفاً دسترسی‌های دیگر را انتخاب کنید یا برای ذخیره، دکمه «ذخیره تغییرات» را بزنید.";
+                            
+                            sendMessage($_ENV['TELEGRAM_TOKEN'], $chat_id, $status);
+                            echo "وضعیت دسترسی‌های ادمین به روز شد\n";
+                            break;
+                            
+                        // منتظر دریافت آیدی کانال/گروه
+                        case 'waiting_for_channel_id':
+                            // بررسی آیا کاربر درخواست لغو کرده است
+                            if (strpos($text, 'لغو') !== false) {
+                                // بازگشت به منوی پنل مدیریت
+                                $admin_menu = "🛠️ *پنل مدیریت*\n\n";
+                                $admin_menu .= "به پنل مدیریت ربات خوش آمدید. لطفاً یکی از گزینه‌های زیر را انتخاب کنید:";
+                                
+                                // کیبورد مدیریت
+                                $admin_keyboard = json_encode([
+                                    'keyboard' => [
+                                        [['text' => '📊 آمار ربات']],
+                                        [['text' => '📨 پیام همگانی'], ['text' => '📤 فوروارد همگانی']],
+                                        [['text' => '👥 مدیریت ادمین‌ها']],
+                                        [['text' => '🔗 قفل گروه/کانال']],
+                                        [['text' => '🔙 بازگشت به منوی اصلی']]
+                                    ],
+                                    'resize_keyboard' => true
+                                ]);
+                                
+                                sendMessageWithKeyboard($_ENV['TELEGRAM_TOKEN'], $chat_id, $admin_menu, $admin_keyboard);
+                                
+                                // تغییر وضعیت کاربر
+                                $userState['step'] = 'main_menu';
+                                \Application\Model\DB::table('users')
+                                    ->where('telegram_id', $user_id)
+                                    ->update(['state' => json_encode($userState)]);
+                                    
+                                echo "درخواست قفل گروه/کانال لغو شد\n";
+                                continue;
+                            }
+                            
+                            // ذخیره آیدی کانال/گروه
+                            $channel_id = $text;
+                            $userState['channel_id'] = $channel_id;
+                            $userState['step'] = 'waiting_for_channel_name';
+                            
+                            \Application\Model\DB::table('users')
+                                ->where('telegram_id', $user_id)
+                                ->update(['state' => json_encode($userState)]);
+                                
+                            // درخواست نام کانال/گروه
+                            $message = "📝 *نام گروه/کانال*\n\n";
+                            $message .= "لطفاً نام گروه/کانال را وارد کنید:";
+                            
+                            // کیبورد لغو
+                            $cancel_keyboard = json_encode([
+                                'keyboard' => [
+                                    [['text' => 'لغو ❌']]
+                                ],
+                                'resize_keyboard' => true
+                            ]);
+                            
+                            sendMessageWithKeyboard($_ENV['TELEGRAM_TOKEN'], $chat_id, $message, $cancel_keyboard);
+                            echo "آیدی کانال/گروه دریافت شد\n";
+                            break;
+                            
+                        // منتظر دریافت نام کانال/گروه
+                        case 'waiting_for_channel_name':
+                            // بررسی آیا کاربر درخواست لغو کرده است
+                            if (strpos($text, 'لغو') !== false) {
+                                // بازگشت به منوی پنل مدیریت
+                                $admin_menu = "🛠️ *پنل مدیریت*\n\n";
+                                $admin_menu .= "به پنل مدیریت ربات خوش آمدید. لطفاً یکی از گزینه‌های زیر را انتخاب کنید:";
+                                
+                                // کیبورد مدیریت
+                                $admin_keyboard = json_encode([
+                                    'keyboard' => [
+                                        [['text' => '📊 آمار ربات']],
+                                        [['text' => '📨 پیام همگانی'], ['text' => '📤 فوروارد همگانی']],
+                                        [['text' => '👥 مدیریت ادمین‌ها']],
+                                        [['text' => '🔗 قفل گروه/کانال']],
+                                        [['text' => '🔙 بازگشت به منوی اصلی']]
+                                    ],
+                                    'resize_keyboard' => true
+                                ]);
+                                
+                                sendMessageWithKeyboard($_ENV['TELEGRAM_TOKEN'], $chat_id, $admin_menu, $admin_keyboard);
+                                
+                                // تغییر وضعیت کاربر
+                                $userState['step'] = 'main_menu';
+                                unset($userState['channel_id']);
+                                
+                                \Application\Model\DB::table('users')
+                                    ->where('telegram_id', $user_id)
+                                    ->update(['state' => json_encode($userState)]);
+                                    
+                                echo "درخواست قفل گروه/کانال لغو شد\n";
+                                continue;
+                            }
+                            
+                            // ذخیره نام کانال/گروه
+                            $channel_name = $text;
+                            $userState['channel_name'] = $channel_name;
+                            
+                            // تولید توکن تصادفی
+                            $token = substr(md5(uniqid(rand(), true)), 0, 10);
+                            
+                            // ذخیره اطلاعات کانال/گروه در دیتابیس
+                            $channelData = [
+                                'channel_id' => $userState['channel_id'],
+                                'channel_name' => $channel_name,
+                                'channel_type' => strpos($userState['channel_id'], '-100') === 0 ? 'channel' : 'group',
+                                'token' => $token,
+                                'is_active' => true
+                            ];
+                            
+                            $channel_id = \Application\Model\DB::table('channel_locks')->insert($channelData);
+                            
+                            // ارسال پیام تأیید
+                            $message = "✅ *گروه/کانال ثبت شد*\n\n";
+                            $message .= "• شناسه: {$userState['channel_id']}\n";
+                            $message .= "• نام: {$channel_name}\n";
+                            $message .= "• توکن: `{$token}`\n\n";
+                            $message .= "این توکن را باید در کانال/گروه خود به صورت پین شده قرار دهید تا کاربران بتوانند از ربات استفاده کنند.";
+                            
+                            // بازگشت به منوی پنل مدیریت
+                            $admin_keyboard = json_encode([
+                                'keyboard' => [
+                                    [['text' => '📊 آمار ربات']],
+                                    [['text' => '📨 پیام همگانی'], ['text' => '📤 فوروارد همگانی']],
+                                    [['text' => '👥 مدیریت ادمین‌ها']],
+                                    [['text' => '🔗 قفل گروه/کانال']],
+                                    [['text' => '🔙 بازگشت به منوی اصلی']]
+                                ],
+                                'resize_keyboard' => true
+                            ]);
+                            
+                            sendMessageWithKeyboard($_ENV['TELEGRAM_TOKEN'], $chat_id, $message, $admin_keyboard);
+                            
+                            // تغییر وضعیت کاربر
+                            $userState['step'] = 'main_menu';
+                            unset($userState['channel_id']);
+                            unset($userState['channel_name']);
+                            
+                            \Application\Model\DB::table('users')
+                                ->where('telegram_id', $user_id)
+                                ->update(['state' => json_encode($userState)]);
+                                
+                            echo "گروه/کانال با موفقیت ثبت شد\n";
+                            break;
+                    }
+                    
+                    continue;
+                }
+                
                 // اگر کاربر در حال ارسال موقعیت مکانی است
                 if ($userState['state'] === 'profile' && $userState['step'] === 'location') {
                     $latitude = $update['message']['location']['latitude'];
@@ -2864,7 +3455,7 @@ while (true) {
                             case 'name':
                                 if (strlen($text) > 30) {
                                     sendMessage($_ENV['TELEGRAM_TOKEN'], $chat_id, "❌ نام شما نباید بیشتر از 30 کاراکتر باشد. لطفاً دوباره تلاش کنید.");
-                                    continue 2;
+                                    continue;
                                 }
                                 
                                 // ذخیره نام در پروفایل کاربر
@@ -2906,7 +3497,7 @@ while (true) {
                                     $gender = 'female';
                                 } else {
                                     sendMessage($_ENV['TELEGRAM_TOKEN'], $chat_id, "❌ لطفاً یکی از گزینه‌های موجود را انتخاب کنید.");
-                                    continue 2;
+                                    continue;
                                 }
                                 
                                 // ذخیره جنسیت در پروفایل کاربر
@@ -2945,7 +3536,7 @@ while (true) {
                                 $age = intval($text);
                                 if ($age < 9 || $age > 70) {
                                     sendMessage($_ENV['TELEGRAM_TOKEN'], $chat_id, "❌ لطفاً سن خود را بین 9 تا 70 سال انتخاب کنید.");
-                                    continue 2;
+                                    continue;
                                 }
                                 
                                 // ذخیره سن در پروفایل کاربر
@@ -2992,7 +3583,7 @@ while (true) {
                                 // بررسی معتبر بودن استان انتخاب شده
                                 if (!in_array($text, $provinces) && $text !== 'ترجیح میدهم نگویم') {
                                     sendMessage($_ENV['TELEGRAM_TOKEN'], $chat_id, "❌ لطفاً یکی از استان‌های موجود در لیست را انتخاب کنید.");
-                                    continue 2;
+                                    continue;
                                 }
                                 
                                 // ذخیره استان در پروفایل کاربر
@@ -3081,7 +3672,7 @@ while (true) {
                             case 'bio':
                                 if (strlen($text) > 200) {
                                     sendMessage($_ENV['TELEGRAM_TOKEN'], $chat_id, "❌ بیوگرافی شما نباید بیشتر از 200 کاراکتر باشد. لطفاً دوباره تلاش کنید.");
-                                    continue 2;
+                                    continue;
                                 }
                                 
                                 // ذخیره بیوگرافی در پروفایل کاربر
