@@ -2038,7 +2038,7 @@ while (true) {
                     
                     // دریافت زیرمجموعه‌ها با استفاده از کوئری خام
                     $referrals = \Application\Model\DB::rawQuery(
-                        "SELECT * FROM users WHERE refere_id = ?", 
+                        "SELECT * FROM referrals WHERE referee_id = ?", 
                         [$userData['id']]
                     );
                     
@@ -2481,7 +2481,7 @@ while (true) {
                         
                         // جستجوی کاربر انتخاب شده در میان زیرمجموعه‌ها
                         $referral = \Application\Model\DB::rawQuery(
-                            "SELECT * FROM users WHERE username = ? AND refere_id = ?", 
+                            "SELECT r.*, u.username FROM referrals r JOIN users u ON r.referee_id = u.id WHERE u.username = ? AND r.referrer_id = ?", 
                             [$text, $userData['id']]
                         );
                         $referral = !empty($referral) ? $referral[0] : null;
@@ -2544,7 +2544,7 @@ while (true) {
                             if (!$referralStatus) {
                                 \Application\Model\DB::table('referral_status')->insert([
                                     'user_id' => $referral['id'],
-                                    'refere_id' => $userData['id'],
+                                    'referrer_id' => $userData['id'],
                                     'started_bot' => true,
                                     'won_one_game' => $wins >= 1,
                                     'completed_profile' => $profile_completed,

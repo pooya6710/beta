@@ -87,6 +87,11 @@ class DB extends Model
 
     public function first()
     {
+        // اگر کوئری هنوز ایجاد نشده است، یک کوئری SELECT ایجاد می‌کنیم
+        if (empty($this->query)) {
+            $this->select('*');
+        }
+        
         $this->query .= " LIMIT 1";
         return $this->get()[0] ?? null;
     }
