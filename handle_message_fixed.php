@@ -85,7 +85,8 @@ if ($text == '/start') {
         exit();
     }
 
-    $oldMatch = DB::rawQuery("SELECT * FROM matches WHERE (player1 = ? OR player2 = ?) AND (status = 'pending' OR status = 'playing');" , [$telegram->from_id , $telegram->from_id])[0];
+    $oldMatchResult = DB::rawQuery("SELECT * FROM matches WHERE (player1 = ? OR player2 = ?) AND (status = 'pending' OR status = 'playing');" , [$telegram->from_id , $telegram->from_id]);
+    $oldMatch = isset($oldMatchResult[0]) ? $oldMatchResult[0] : null;
     if ($oldMatch) {
         $telegram->sendMessage("%message.u_have_old_match%")->send();
         exit();
