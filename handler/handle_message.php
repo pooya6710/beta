@@ -84,7 +84,9 @@ if ($text == '/start') {
     $telegram->sendMessage("%message.start[firstname:$first_name]%")->keyboard('main.home')->replay()->send();
     exit();
 } elseif (str_contains($text, 'بازی با ناشناس') || trim($text) == trim($locale->trans('keyboard.home.play_with_unknown'))) {
-    if ($user->userData()['is_firstMatch']){
+    // بررسی وجود و معتبر بودن کاربر و داده‌های آن
+$userData = $user->userData();
+if ($userData && isset($userData['is_firstMatch']) && $userData['is_firstMatch']){
         $telegram->sendMessage("%message.firstMatch_unknown%")->send();
         DB::table('users')->where('telegram_id',  $telegram->from_id)->update(['is_firstMatch'=>0]);
         exit();
