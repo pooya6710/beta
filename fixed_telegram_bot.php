@@ -140,8 +140,8 @@ function processUpdate($update) {
         if (isset($exploded_text[1])) {
             $exploded_text = explode("_", $exploded_text[1]);
             if ($exploded_text[0] === "re") {
-                $ref_user_id = DB::table('users')->where('username', $exploded_text[1])->select('id')->first()['id'];
-                $user = new User($update, $ref_user_id);
+                $ref_user_id = \Application\Model\DB::table('users')->where('username', $exploded_text[1])->select('id')->first()['id'];
+                $user = new application\controllers\UserController($update, $ref_user_id);
                 if (!$ref_user_id) {
                     $telegram->sendMessage('%message.wrong_ref_link%')->send();
                     return;
@@ -150,24 +150,24 @@ function processUpdate($update) {
                     $telegram->sendMessage('%message.warning_joined_before%')->send();
                     return;
                 } elseif ($user->is_ref == 1) {
-                    $ref_telegram_id = DB::table('users')->where('username', $exploded_text[1])->select('telegram_id')->first()['telegram_id'];
-                    DB::rawQuery("UPDATE users_extra SET doz_coin = doz_coin + 0.5 WHERE user_id = $ref_user_id;");
-                    $doz_coin = DB::rawQuery("SELECT doz_coin FROM users_extra WHERE user_id = ( SELECT id FROM users WHERE telegram_id = $ref_telegram_id);")[0]['doz_coin'];
+                    $ref_telegram_id = \Application\Model\DB::table('users')->where('username', $exploded_text[1])->select('telegram_id')->first()['telegram_id'];
+                    \Application\Model\DB::rawQuery("UPDATE users_extra SET doz_coin = doz_coin + 0.5 WHERE user_id = $ref_user_id;");
+                    $doz_coin = \Application\Model\DB::rawQuery("SELECT doz_coin FROM users_extra WHERE user_id = ( SELECT id FROM users WHERE telegram_id = $ref_telegram_id);")[0]['doz_coin'];
 
                     $telegram->sendMessage("%message.ref_joined[doz_coin:$doz_coin]%")->send($ref_telegram_id);
                 }
             }
         } else {
             // دستور /start ساده
-            $user = new User($update);
+            $user = new application\controllers\UserController($update);
             $telegram->sendMessage("%message.start[firstname:$first_name]%")->keyboard('main.home')->replay()->send();
             return;
         }
     }
 
     // بررسی عضویت کاربر در کانال‌ها
-    $user = new User($update);
-    $step = new Step($update);
+    $user = new application\controllers\UserController($update);
+    $step = new application\controllers\StepController($update);
     
     if ($option->forced_to_join && !(isset($update->callback_query->data) && str_starts_with($update->callback_query->data, "p1"))) {
         $should_to_join = [];
@@ -195,12 +195,12 @@ function processUpdate($update) {
     // بررسی تنظیم نام کاربری
     if ($step && method_exists($step, 'get') && $step->get() == 'set_username') {
         if (isset($update->message->text) && preg_match('/^[a-zA-Z][a-zA-Z0-9]{4,11}$/', $update->message->text)) {
-            $is_username_exist = DB::table('users')->where('username', $update->message->text)->select('id')->first();
+            $is_username_exist = \Application\Model\DB::table('users')->where('username', $update->message->text)->select('id')->first();
             if ($is_username_exist) {
                 $telegram->sendMessage("%message.username_exits%")->send();
                 return;
             }
-            DB::table('users')->where('telegram_id', $telegram->from_id)->update(['username' => $update->message->text]);
+            \Application\Model\DB::table('users')->where('telegram_id', $telegram->from_id)->update(['username' => $update->message->text]);
             $step->clear();
             $telegram->sendMessage("%message.username_ok[username:{$update->message->text}]%")->keyboard('main.home')->send();
             return;
