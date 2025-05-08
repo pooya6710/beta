@@ -1132,7 +1132,7 @@ while (true) {
                     
                     // دریافت زیرمجموعه‌ها با استفاده از کوئری خام
                     $referrals = \Application\Model\DB::rawQuery(
-                        "SELECT * FROM users WHERE referrer_id = ?", 
+                        "SELECT * FROM users WHERE refere_id = ?", 
                         [$userData['id']]
                     );
                     
@@ -1547,10 +1547,11 @@ while (true) {
                         }
                         
                         // جستجوی کاربر انتخاب شده در میان زیرمجموعه‌ها
-                        $referral = \Application\Model\DB::table('users')
-                            ->where('username', $text)
-                            ->where('referrer_id', $userData['id'])
-                            ->first();
+                        $referral = \Application\Model\DB::rawQuery(
+                            "SELECT * FROM users WHERE username = ? AND refere_id = ?", 
+                            [$text, $userData['id']]
+                        );
+                        $referral = !empty($referral) ? $referral[0] : null;
                         
                         if (!$referral) {
                             sendMessage($_ENV['TELEGRAM_TOKEN'], $chat_id, "❌ کاربر انتخاب شده در میان زیرمجموعه‌های شما یافت نشد.");
@@ -1610,7 +1611,7 @@ while (true) {
                             if (!$referralStatus) {
                                 \Application\Model\DB::table('referral_status')->insert([
                                     'user_id' => $referral['id'],
-                                    'referrer_id' => $userData['id'],
+                                    'refere_id' => $userData['id'],
                                     'started_bot' => true,
                                     'won_one_game' => $wins >= 1,
                                     'completed_profile' => $profile_completed,
