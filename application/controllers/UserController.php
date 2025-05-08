@@ -30,66 +30,87 @@ class UserController extends HelperController
                     $this->is_ref = 0;
                 }
             }
-        }
-        DB::rawQuery("UPDATE users 
+            
+            // اصلاح شده: استفاده از پارامتر به جای مقدار مستقیم در کوئری
+            DB::rawQuery("UPDATE users 
 SET updated_at = CURRENT_TIMESTAMP
-WHERE telegram_id = $this->telegram_id;
-");
+WHERE telegram_id = ?;", [$this->telegram_id]);
+        }
     }
 
     public function userData()
     {
-        return DB::table('users')->where(['telegram_id' => $this->telegram_id])->select('*')->first();
+        // اصلاح شده: بررسی معتبر بودن telegram_id
+        if ($this->telegram_id) {
+            return DB::table('users')->where(['telegram_id' => $this->telegram_id])->select('*')->first();
+        }
+        return null;
     }
 
     public function userExtra($userId)
     {
-        return DB::table('users_extra')->where(['user_id' => $userId])->select('*')->first();
+        // اصلاح شده: بررسی معتبر بودن userId
+        if ($userId) {
+            return DB::table('users_extra')->where(['user_id' => $userId])->select('*')->first();
+        }
+        return null;
     }
 
     public function userMatchesRank($userId)
     {
-         $x = DB::rawQuery('SELECT user_id, matches, user_rank FROM ( SELECT id, user_id, matches, RANK() OVER (ORDER BY matches DESC) AS user_rank FROM users_extra ) AS ranked_users WHERE user_id = ?;', [$userId]);
-         if (!empty($x)) return $x[0];
-         else return null;
+        // اصلاح شده: بررسی معتبر بودن userId
+        if ($userId) {
+            $x = DB::rawQuery('SELECT user_id, matches, user_rank FROM ( SELECT id, user_id, matches, RANK() OVER (ORDER BY matches DESC) AS user_rank FROM users_extra ) AS ranked_users WHERE user_id = ?;', [$userId]);
+            if (!empty($x)) return $x[0];
+        }
+        return null;
     }
 
     public function userWinRateRank($userId)
     {
-        $x = DB::rawQuery('SELECT user_id, winRate, user_rank FROM ( SELECT user_id, (wins / matches) * 100 AS winRate, RANK() OVER (ORDER BY (wins / matches) DESC) AS user_rank FROM users_extra WHERE matches > 0 ) AS ranked_users WHERE user_id = ?;', [$userId]);
-        if (!empty($x)) return $x[0];
-        else return null;
+        // اصلاح شده: بررسی معتبر بودن userId
+        if ($userId) {
+            $x = DB::rawQuery('SELECT user_id, winRate, user_rank FROM ( SELECT user_id, (wins / matches) * 100 AS winRate, RANK() OVER (ORDER BY (wins / matches) DESC) AS user_rank FROM users_extra WHERE matches > 0 ) AS ranked_users WHERE user_id = ?;', [$userId]);
+            if (!empty($x)) return $x[0];
+        }
+        return null;
     }
 
     public function userRank($userId)
     {
-        $x = DB::rawQuery('
-        SELECT user_id, matches, winRate, match_rank, winRate_rank
-        FROM (
-            SELECT 
-                user_id, 
-                matches, 
-                (wins / matches) * 100 AS winRate, 
-                RANK() OVER (ORDER BY matches DESC) AS match_rank, 
-                RANK() OVER (ORDER BY (wins / matches) DESC) AS winRate_rank
-            FROM users_extra
-            WHERE matches > 0
-        ) AS ranked_users
-        WHERE user_id = ?;
-    ', [$userId]);
+        // اصلاح شده: بررسی معتبر بودن userId
+        if ($userId) {
+            $x = DB::rawQuery('
+            SELECT user_id, matches, winRate, match_rank, winRate_rank
+            FROM (
+                SELECT 
+                    user_id, 
+                    matches, 
+                    (wins / matches) * 100 AS winRate, 
+                    RANK() OVER (ORDER BY matches DESC) AS match_rank, 
+                    RANK() OVER (ORDER BY (wins / matches) DESC) AS winRate_rank
+                FROM users_extra
+                WHERE matches > 0
+            ) AS ranked_users
+            WHERE user_id = ?;
+        ', [$userId]);
 
-        if (!empty($x)) return $x[0];
-        else return null;
+            if (!empty($x)) return $x[0];
+        }
+        return null;
     }
 
     public function isAdmin(): bool
     {
-        $checkUser = DB::table('users')->where(['telegram_id' => $this->telegram_id])->select('*')->first();
-        if ($checkUser){
-            if ($checkUser['type'] == 'admin' or $checkUser['type'] == 'owner'){
-                return true;
-            } else return false;
-        } else return false;
+        // اصلاح شده: بررسی معتبر بودن telegram_id
+        if ($this->telegram_id) {
+            $checkUser = DB::table('users')->where(['telegram_id' => $this->telegram_id])->select('*')->first();
+            if ($checkUser){
+                if ($checkUser['type'] == 'admin' or $checkUser['type'] == 'owner'){
+                    return true;
+                }
+            }
+        }
+        return false;
     }
-
 }

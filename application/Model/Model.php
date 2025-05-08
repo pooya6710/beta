@@ -21,11 +21,18 @@ class Model
     {
         $options = [
             PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION,
-            PDO::ATTR_DEFAULT_FETCH_MODE => PDO::FETCH_ASSOC,
-            PDO::MYSQL_ATTR_INIT_COMMAND => "SET NAMES utf8"
+            PDO::ATTR_DEFAULT_FETCH_MODE => PDO::FETCH_ASSOC
         ];
         try {
-            self::$connection = new PDO("mysql:host={$_ENV['dbHostName']};dbname={$_ENV['dbName']}", $_ENV['dbUserName'], $_ENV['dbPassword'], $options);
+            // استفاده از متغیرهای محیطی PostgreSQL
+            $host = $_ENV['PGHOST'] ?? 'localhost';
+            $port = $_ENV['PGPORT'] ?? '5432';
+            $dbname = $_ENV['PGDATABASE'] ?? 'postgres';
+            $user = $_ENV['PGUSER'] ?? 'postgres';
+            $password = $_ENV['PGPASSWORD'] ?? '';
+            
+            $dsn = "pgsql:host=$host;port=$port;dbname=$dbname";
+            self::$connection = new PDO($dsn, $user, $password, $options);
         } catch (PDOException $e) {
             // Consider logging the error instead of echoing it
             throw new Exception("Database connection error: " . $e->getMessage());
