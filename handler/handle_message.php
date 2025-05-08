@@ -27,7 +27,13 @@ $first_name = $telegram->get()->message->from->first_name;
 //$telegram->sendMessage($telegram->get())->send();
 
 
-if ($text == '/start'){
+if ($text == '/cancel'){
+    // پاک کردن همه بازی‌های در انتظار کاربر
+    DB::table('matches')->where(['player1' => $telegram->from_id, 'status' => 'pending'])->delete();
+    $telegram->sendMessage("%message.cancel_search%")->keyboard('main.home')->send();
+    exit();
+}
+elseif ($text == '/start'){
     $telegram->sendMessage("%message.start[firstname:$first_name]%")->keyboard('main.home')->replay()->send();
     exit();
 }
@@ -92,13 +98,15 @@ if ($userData && isset($userData['is_firstMatch']) && $userData['is_firstMatch']
         exit();
     }
 
-    $oldMatch = DB::rawQuery("SELECT * FROM matches WHERE (player1 = ? OR player2 = ?) AND (status = 'pending' OR status = 'playing');" , [$telegram->from_id , $telegram->from_id])[0];
+    $oldMatchResult = DB::rawQuery("SELECT * FROM matches WHERE (player1 = ? OR player2 = ?) AND (status = 'pending' OR status = 'playing');" , [$telegram->from_id , $telegram->from_id]);
+    $oldMatch = isset($oldMatchResult[0]) ? $oldMatchResult[0] : null;
     if ($oldMatch) {
         $telegram->sendMessage("%message.u_have_old_match%")->send();
         exit();
     }else{
         $telegram->sendMessage("%message.finding_player%")->send();
-        $newMatch = DB::rawQuery("SELECT * FROM matches WHERE player2 IS NULL AND status = 'pending' AND type = 'anonymous' ORDER BY id ASC LIMIT 1;")[0];
+        $newMatchResult = DB::rawQuery("SELECT * FROM matches WHERE player2 IS NULL AND status = 'pending' AND type = 'anonymous' ORDER BY id ASC LIMIT 1;");
+        $newMatch = isset($newMatchResult[0]) ? $newMatchResult[0] : null;
         if ($newMatch){
             $player2_hash = $helper->Hash();
             DB::table('matches')->where(['id' => $newMatch['id']])->update(['player2' => $telegram->from_id , 'player2_hash' => $player2_hash , 'status' => 'playing']);
@@ -216,7 +224,8 @@ elseif ($text == $locale->trans('keyboard.home.friend_list')){
         $friend_data = DB::table('users')->where('id', $friend)->select('username,telegram_id,updated_at')->first();
         $friend_username = $friend_data['username'];
 
-        $match = DB::rawQuery("SELECT * FROM matches WHERE (player1 = ? OR player2 = ?) AND (status = 'playing' or status = 'pending');" , [$friend_data['telegram_id'] , $friend_data['telegram_id']])[0];
+        $matchResult = DB::rawQuery("SELECT * FROM matches WHERE (player1 = ? OR player2 = ?) AND (status = 'playing' or status = 'pending');" , [$friend_data['telegram_id'] , $friend_data['telegram_id']]);
+        $match = isset($matchResult[0]) ? $matchResult[0] : null;
         if ($match) {
             $status = '🕹';
             $status_callback = 'playing';
@@ -320,7 +329,8 @@ elseif ($text == $locale->trans('keyboard.home.leaderboard_winer')){
     exit();
 }
 elseif ($text == $locale->trans('keyboard.home.reject')){
-    $match = DB::rawQuery("SELECT * FROM matches WHERE (player1 = ? OR player2 = ?) AND (status = 'playing');" , [$telegram->from_id , $telegram->from_id])[0];
+    $matchResult = DB::rawQuery("SELECT * FROM matches WHERE (player1 = ? OR player2 = ?) AND (status = 'playing');" , [$telegram->from_id , $telegram->from_id]);
+    $match = isset($matchResult[0]) ? $matchResult[0] : null;
     if ($match['player1'] == $telegram->from_id)
         $friend_telegram_id = $match['player2'];
     elseif ($match['player2'] == $telegram->from_id)
@@ -418,7 +428,8 @@ if ($step->get() == 'add_friend' or str_starts_with($text , 'httpreqfriend_')){
     exit();
 }
 elseif ($step->get() == 'in_chat') {
-    $match = DB::rawQuery("SELECT * FROM matches WHERE (player1 = ? OR player2 = ?) AND (status = 'playing' or status = 'pending');" , [$telegram->from_id , $telegram->from_id])[0];
+    $matchResult = DB::rawQuery("SELECT * FROM matches WHERE (player1 = ? OR player2 = ?) AND (status = 'playing' or status = 'pending');" , [$telegram->from_id , $telegram->from_id]);
+    $match = isset($matchResult[0]) ? $matchResult[0] : null;
     if ($match['player1'] == $telegram->from_id)
         $friend_telegram_id = $match['player2'];
     elseif ($match['player2'] == $telegram->from_id)
