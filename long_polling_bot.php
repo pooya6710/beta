@@ -320,7 +320,9 @@ while (true) {
                     \Application\Model\DB::table('matches')->insert([
                         'player1' => $user_id, 
                         'player1_hash' => $helper->Hash(), 
-                        'type' => 'anonymous'
+                        'type' => 'anonymous',
+                        'created_at' => date('Y-m-d H:i:s'),
+                        'last_action_time' => date('Y-m-d H:i:s') // زمان آخرین کنش برای محاسبه زمان‌سنج
                     ]);
                     
                     echo "بازی جدید در وضعیت pending ایجاد شد\n";
@@ -738,5 +740,35 @@ function editMessageText($token, $chat_id, $message_id, $text, $reply_markup = n
     curl_close($ch);
     
     return $result;
+}
+
+/**
+ * محاسبه و تولید متن تایمر برای بازیکن
+ * این تایمر زیر نام کاربر نمایش داده می‌شود
+ */
+function generatePlayerTimer($last_action_time) {
+    // اگر زمان آخرین کنش صفر یا خالی باشد
+    if (empty($last_action_time)) {
+        return "⏱️ زمان: 00:00";
+    }
+    
+    // تبدیل به تایم‌استمپ
+    $last_action_timestamp = strtotime($last_action_time);
+    $current_timestamp = time();
+    
+    // محاسبه تفاوت زمانی (به ثانیه)
+    $time_diff = $current_timestamp - $last_action_timestamp;
+    
+    // اگر تفاوت زمانی منفی باشد (که نباید باشد)
+    if ($time_diff < 0) {
+        $time_diff = 0;
+    }
+    
+    // تبدیل به دقیقه و ثانیه
+    $minutes = floor($time_diff / 60);
+    $seconds = $time_diff % 60;
+    
+    // قالب‌بندی متن تایمر
+    return sprintf("⏱️ زمان: %02d:%02d", $minutes, $seconds);
 }
 ?>
