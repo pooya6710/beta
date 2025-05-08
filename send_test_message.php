@@ -1,42 +1,28 @@
 <?php
-ini_set('display_errors', 1);
-ini_set('display_startup_errors', 1);
-error_reporting(E_ALL);
+require __DIR__ . '/vendor/autoload.php';
 
-require_once(__DIR__ . '/vendor/autoload.php');
-$dotenv = \Dotenv\Dotenv::createImmutable((__DIR__));
+use Dotenv\Dotenv;
+$dotenv = Dotenv::createImmutable(__DIR__);
 $dotenv->safeLoad();
 
-// توکن ربات تلگرام
 $token = $_ENV['TELEGRAM_TOKEN'];
 
-// آی‌دی چت کاربر (این مقدار را باید با آی‌دی چت خود جایگزین کنید)
-$chatId = "YOUR_CHAT_ID";
+// آیدی چت کاربر را اینجا وارد کنید (برای ارسال پیام آزمایشی)
+$chat_id = ""; // آیدی چت خود را اینجا قرار دهید
 
-// متن پیام
-$message = "سلام! این یک پیام تست از ربات است.";
+// ارسال پیام آزمایشی
+$text = "پیام آزمایشی: ربات کار می‌کند! 🎉";
+$url = "https://api.telegram.org/bot{$token}/sendMessage?chat_id={$chat_id}&text=" . urlencode($text);
 
-// لینک ارسال پیام به API تلگرام
-$apiUrl = "https://api.telegram.org/bot{$token}/sendMessage";
+$response = file_get_contents($url);
+$result = json_decode($response, true);
 
-// پارامترهای ارسال پیام
-$params = [
-    'chat_id' => $chatId,
-    'text' => $message
-];
+echo "نتیجه ارسال پیام:<br>";
+print_r($result);
 
-// تنظیمات cURL
-$ch = curl_init($apiUrl);
-curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
-curl_setopt($ch, CURLOPT_POSTFIELDS, $params);
-
-// دریافت پاسخ
-$response = curl_exec($ch);
-curl_close($ch);
-
-// نمایش نتیجه
-echo "<h1>نتیجه ارسال پیام:</h1>";
-echo "<pre>";
-print_r(json_decode($response, true));
-echo "</pre>";
+if ($result['ok']) {
+    echo "<br>پیام با موفقیت ارسال شد ✅";
+} else {
+    echo "<br>خطا در ارسال پیام ❌";
+}
 ?>

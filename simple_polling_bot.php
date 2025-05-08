@@ -1,202 +1,124 @@
 <?php
+require __DIR__ . '/vendor/autoload.php';
 
-use application\controllers\HelperController as Helper;
-use application\controllers\TelegramClass as Telegram;
-use application\controllers\LocaleController as Locale;
-use application\controllers\KeyboardController as Keyboard;
-use application\controllers\StepController as Step;
-use application\controllers\UserController as User;
-use application\controllers\OptionController as Option;
+use Dotenv\Dotenv;
 use Application\Model\DB;
 
-ini_set('display_errors', 1);
-ini_set('display_startup_errors', 1);
-error_reporting(E_ALL);
-
-require_once(__DIR__ . '/vendor/autoload.php');
-$dotenv = \Dotenv\Dotenv::createImmutable((__DIR__));
+$dotenv = Dotenv::createImmutable(__DIR__);
 $dotenv->safeLoad();
-include(__DIR__ . "/system/Loader.php");
+
+// جلوگیری از timeout در اجرای طولانی
+set_time_limit(0);
 date_default_timezone_set('Asia/Tehran');
 
-// توکن تلگرام
-$token = $_ENV['TELEGRAM_TOKEN'];
+// فایل ذخیره آخرین آپدیت
+$lastUpdateIdFile = __DIR__ . '/last_update_id.txt';
 
-// تنظیم آخرین آپدیت دریافت شده
-$lastUpdateId = 0;
+// برای شروع از ابتدا، 0 را در فایل قرار دهید
+if (!file_exists($lastUpdateIdFile)) {
+    file_put_contents($lastUpdateIdFile, "0");
+}
 
-echo "ربات تلگرام ساده در حال اجرا...\n";
+// خواندن آخرین آپدیت
+$lastUpdateId = (int)file_get_contents($lastUpdateIdFile);
+
+echo "ربات ساده در حال اجرا با Long Polling...\n";
+echo "آخرین آپدیت: {$lastUpdateId}\n";
 echo "برای توقف، کلید Ctrl+C را فشار دهید.\n\n";
 
 // حلقه اصلی برای دریافت پیام‌ها
 while (true) {
-    // دریافت آپدیت‌ها از تلگرام
-    $updates = getUpdates($token, $lastUpdateId);
-    
-    if (!$updates || !isset($updates['result']) || empty($updates['result'])) {
-        // اگر آپدیتی نبود، 1 ثانیه صبر کن و دوباره تلاش کن
-        sleep(1);
-        continue;
-    }
-    
-    // پردازش هر آپدیت
-    foreach ($updates['result'] as $update) {
-        try {
-            // به‌روزرسانی آخرین آی‌دی آپدیت
-            $lastUpdateId = $update['update_id'] + 1;
-            
-            // تبدیل آپدیت به شیء
-            $updateObj = json_decode(json_encode($update));
-            
-            // ایجاد متغیرهای کلی برای استفاده در include
-            $GLOBALS['telegram'] = new Telegram($updateObj);
-            $GLOBALS['locale'] = new Locale();
-            $GLOBALS['keyboard'] = new Keyboard();
-            $GLOBALS['option'] = new Option();
-            $GLOBALS['helper'] = new Helper();
-            $GLOBALS['user'] = new User($updateObj);
-            $GLOBALS['step'] = new Step($updateObj);
-            
-            // دسترسی سریع به متغیرهای مهم
-            $telegram = $GLOBALS['telegram'];
-            $locale = $GLOBALS['locale'];
-            $keyboard = $GLOBALS['keyboard'];
-            $option = $GLOBALS['option'];
-            $helper = $GLOBALS['helper'];
-            $user = $GLOBALS['user'];
-            $step = $GLOBALS['step'];
-            
-            // چاپ اطلاعات آپدیت
-            echo "آپدیت جدید دریافت شد (ID: {$update['update_id']})\n";
-            if (isset($update['message']['text'])) {
-                echo "پیام: {$update['message']['text']}\n";
-                echo "از کاربر: {$update['message']['from']['first_name']} (ID: {$update['message']['from']['id']})\n";
-            } elseif (isset($update['callback_query'])) {
-                echo "کالبک: {$update['callback_query']['data']}\n";
-                echo "از کاربر: {$update['callback_query']['from']['first_name']} (ID: {$update['callback_query']['from']['id']})\n";
-            }
-            
-            // اجرای کد مشابه index.php
-            if (isset($update['message']['text']) && str_starts_with($update['message']['text'], "/start")) {
-                $exploded_text = explode(" ", $update['message']['text']);
-                if (isset($exploded_text[1])) {
-                    $exploded_text = explode("_", $exploded_text[1]);
-                    if ($exploded_text[0] === "re") {
-                        $ref_user_id = DB::table('users')->where('username', $exploded_text[1])->select('id')->first()['id'];
-                        $user = new User($updateObj, $ref_user_id);
-                        if (!$ref_user_id) {
-                            $telegram->sendMessage('%message.wrong_ref_link%')->send();
-                            continue;
-                        }
-                        if ($user->is_ref == 0) {
-                            $telegram->sendMessage('%message.warning_joined_before%')->send();
-                            continue;
-                        } elseif ($user->is_ref == 1) {
-                            $ref_telegram_id = DB::table('users')->where('username', $exploded_text[1])->select('telegram_id')->first()['telegram_id'];
-                            DB::rawQuery("UPDATE users_extra SET doz_coin = doz_coin + 0.5 WHERE user_id = $ref_user_id;");
-                            $doz_coin = DB::rawQuery("SELECT doz_coin FROM users_extra WHERE user_id = ( SELECT id FROM users WHERE telegram_id = $ref_telegram_id);")[0]['doz_coin'];
-                            $telegram->sendMessage("%message.ref_joined[doz_coin:$doz_coin]%")->send($ref_telegram_id);
-                        }
+    try {
+        // دریافت آپدیت‌ها با CURL
+        $updates = getUpdatesViaCurl($_ENV['TELEGRAM_TOKEN'], $lastUpdateId);
+        
+        // بررسی وجود آپدیت‌های جدید
+        if (isset($updates['result']) && !empty($updates['result'])) {
+            foreach ($updates['result'] as $update) {
+                // به روزرسانی شناسه آخرین آپدیت
+                $newUpdateId = $update['update_id'] + 1;
+                file_put_contents($lastUpdateIdFile, $newUpdateId);
+                
+                echo "دریافت آپدیت جدید (ID: {$update['update_id']})\n";
+                
+                // فقط پردازش پیام‌های متنی
+                if (isset($update['message']) && isset($update['message']['text'])) {
+                    $text = $update['message']['text'];
+                    $chat_id = $update['message']['chat']['id'];
+                    $username = isset($update['message']['from']['username']) ? $update['message']['from']['username'] : 'بدون نام کاربری';
+                    
+                    echo "پیام دریافتی از {$username}: {$text}\n";
+                    
+                    // پاسخ به دستور /start
+                    if ($text === '/start') {
+                        sendMessage($_ENV['TELEGRAM_TOKEN'], $chat_id, "سلام! ربات کار می‌کند. 🙌");
+                    }
+                    // پاسخ به دستور /cancel
+                    elseif ($text === '/cancel') {
+                        // پاک کردن همه بازی‌های در انتظار کاربر
+                        $deleted = DB::table('matches')->where(['player1' => $chat_id, 'status' => 'pending'])->delete();
+                        sendMessage($_ENV['TELEGRAM_TOKEN'], $chat_id, "✅ جستجوی بازیکن لغو شد.");
+                    }
+                    // پاسخ به هر پیام دیگر
+                    else {
+                        sendMessage($_ENV['TELEGRAM_TOKEN'], $chat_id, "پیام شما: {$text}\n\nبرای لغو جستجوی بازیکن، دستور /cancel را ارسال کنید.");
                     }
                 }
             }
-
-            // بررسی اجبار عضویت در کانال‌ها
-            if ($option->forced_to_join && !(isset($updateObj->callback_query->data) && str_starts_with($updateObj->callback_query->data, "p1"))) {
-                $should_to_join = [];
-                foreach ($option->channels as $channel) {
-                    $status = $telegram->getChatMember($channel);
-                    if ($status == 'left' || $status == 'kicked') {
-                        $channel_info = $telegram->getChat($channel);
-                        if ($channel_info['ok']) {
-                            $should_to_join[] = [['text' => $channel_info['result']['title'], 'url' => $channel_info['result']['invite_link']]];
-                        }
-                    }
-                }
-                if ($should_to_join) {
-                    $should_to_join[] = [['text' => $locale->trans('message.i_join'), 'callback_data' => 'i_join']];
-                    if (isset($updateObj->callback_query) && $updateObj->callback_query->data == 'i_join') {
-                        $telegram->deleteMessage();
-                        $telegram->sendMessage('%message.force_rejoin%')->inline_keyboard($should_to_join)->send();
-                    } else {
-                        $telegram->sendMessage('%message.force_join%')->inline_keyboard($should_to_join)->send();
-                    }
-                    continue;
-                }
-            }
-
-            // بررسی تنظیم نام کاربری
-            if ($step->get() == 'set_username') {
-                if (isset($updateObj->message->text) && preg_match('/^[a-zA-Z][a-zA-Z0-9]{4,11}$/', $updateObj->message->text)) {
-                    $is_username_exist = DB::table('users')->where('username', $updateObj->message->text)->select('id')->first();
-                    if ($is_username_exist) {
-                        $telegram->sendMessage("%message.username_exits%")->send();
-                        continue;
-                    }
-                    DB::table('users')->where('telegram_id', $telegram->from_id)->update(['username' => $updateObj->message->text]);
-                    $step->clear();
-                    $telegram->sendMessage("%message.username_ok[username:{$updateObj->message->text}]%")->keyboard('main.home')->send();
-                    continue;
-                } else {
-                    $telegram->sendMessage('%message.bad_username%')->send();
-                    continue;
-                }
-            }
-
-            // بررسی وضعیت نام کاربری
-            if ($user->userData() && isset($user->userData()['username']) && $user->userData()['username'] == NULL) {
-                $first_name = isset($updateObj->message->from->first_name) ? $updateObj->message->from->first_name : 'کاربر';
-                $telegram->sendMessage("%message.set_username[firstname:$first_name]%")->send();
-                $step->set('set_username');
-                continue;
-            }
-
-            // بررسی دسترسی ادمین
-            if ($user->isAdmin()) {
-                if (isset($updateObj->message)) {
-                    include(__DIR__ . '/handler/handle_admin.php');
-                }
-            }
-
-            // پردازش براساس نوع آپدیت
-            if (isset($updateObj->message)) {
-                include(__DIR__ . '/handler/handle_message.php');
-            } elseif (isset($updateObj->inline_query)) {
-                include(__DIR__ . '/handler/handle_inline_query.php');
-            } elseif (isset($updateObj->callback_query)) {
-                include(__DIR__ . '/handler/handle_callback_query.php');
-            }
-            
-            echo "پردازش موفقیت‌آمیز بود.\n";
-            echo "-------------------\n";
-        } catch (Exception $e) {
-            // در صورت بروز خطا، آن را نمایش بده و به آپدیت بعدی برو
-            echo "خطا در پردازش آپدیت: " . $e->getMessage() . "\n";
-            echo "در خط: " . $e->getLine() . "\n";
-            echo "در فایل: " . $e->getFile() . "\n";
-            echo "-------------------\n";
+        } else {
+            // هیچ آپدیت جدیدی وجود ندارد
+            echo ".";
         }
+    } catch (Exception $e) {
+        echo "\nخطا: " . $e->getMessage() . "\n";
     }
+    
+    // انتظار کوتاه قبل از درخواست بعدی برای کاهش بار سرور
+    sleep(1);
 }
 
 /**
- * دریافت آپدیت‌ها از API تلگرام
+ * ارسال پیام به کاربر
  */
-function getUpdates($token, $offset = 0) {
+function sendMessage($token, $chat_id, $text) {
+    $url = "https://api.telegram.org/bot{$token}/sendMessage";
+    $params = [
+        'chat_id' => $chat_id,
+        'text' => $text,
+        'parse_mode' => 'HTML'
+    ];
+    
+    $ch = curl_init();
+    curl_setopt($ch, CURLOPT_URL, $url);
+    curl_setopt($ch, CURLOPT_POST, 1);
+    curl_setopt($ch, CURLOPT_POSTFIELDS, $params);
+    curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+    $result = curl_exec($ch);
+    curl_close($ch);
+    
+    echo "پیام ارسال شد: {$text}\n";
+    return json_decode($result, true);
+}
+
+/**
+ * دریافت آپدیت‌ها با CURL
+ */
+function getUpdatesViaCurl($token, $offset = 0) {
     $url = "https://api.telegram.org/bot{$token}/getUpdates";
     $params = [
         'offset' => $offset,
-        'timeout' => 30,
-        'allowed_updates' => json_encode(["message", "callback_query", "inline_query"])
+        'timeout' => 1,
+        'limit' => 10,
+        'allowed_updates' => json_encode(['message'])
     ];
     
-    $url .= '?' . http_build_query($params);
-    
-    $response = @file_get_contents($url);
-    if ($response === false) {
-        echo "خطا در دریافت آپدیت‌ها\n";
-        return false;
-    }
+    $ch = curl_init();
+    curl_setopt($ch, CURLOPT_URL, $url . '?' . http_build_query($params));
+    curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+    curl_setopt($ch, CURLOPT_CONNECTTIMEOUT, 5);
+    curl_setopt($ch, CURLOPT_TIMEOUT, 10);
+    $response = curl_exec($ch);
+    curl_close($ch);
     
     return json_decode($response, true);
 }
