@@ -48,6 +48,234 @@ while (true) {
         
         echo "\nآپدیت جدید (ID: {$update['update_id']})\n";
         
+        // پردازش callback query (دکمه‌های inline)
+        if (isset($update['callback_query'])) {
+            $callback_query = $update['callback_query'];
+            $callback_data = $callback_query['data'];
+            $chat_id = $callback_query['message']['chat']['id'];
+            $message_id = $callback_query['message']['message_id'];
+            $user_id = $callback_query['from']['id'];
+            
+            echo "کالبک کوئری دریافت شد: {$callback_data}\n";
+            
+            // پردازش درخواست دوستی
+            if (strpos($callback_data, 'friend_request:') === 0) {
+                try {
+                    // استخراج آیدی کاربر هدف
+                    $target_user_id = substr($callback_data, strlen('friend_request:'));
+                    
+                    // بررسی اینکه آیا کاربر قبلاً در دیتابیس ثبت شده است
+                    $user = \Application\Model\DB::table('users')->where('telegram_id', $user_id)->first();
+                    if (!$user) {
+                        answerCallbackQuery($_ENV['TELEGRAM_TOKEN'], $callback_query['id'], "⚠️ خطا: شما هنوز در سیستم ثبت نشده‌اید!");
+                        echo "خطا: کاربر درخواست دهنده در دیتابیس یافت نشد\n";
+                        continue;
+                    }
+                    
+                    // بررسی اینکه آیا کاربر هدف در دیتابیس ثبت شده است
+                    $target_user = \Application\Model\DB::table('users')->where('id', $target_user_id)->first();
+                    if (!$target_user) {
+                        answerCallbackQuery($_ENV['TELEGRAM_TOKEN'], $callback_query['id'], "⚠️ خطا: کاربر مورد نظر یافت نشد!");
+                        echo "خطا: کاربر هدف در دیتابیس یافت نشد\n";
+                        continue;
+                    }
+                    
+                    // بررسی اینکه آیا کاربر قبلاً درخواست دوستی ارسال کرده است
+                    $existing_request = \Application\Model\DB::table('friend_requests')
+                        ->where('from_user_id', $user['id'])
+                        ->where('to_user_id', $target_user_id)
+                        ->where('status', 'pending')
+                        ->first();
+                        
+                    if ($existing_request) {
+                        answerCallbackQuery($_ENV['TELEGRAM_TOKEN'], $callback_query['id'], "⚠️ شما قبلاً به این کاربر درخواست دوستی ارسال کرده‌اید!");
+                        echo "خطا: درخواست دوستی تکراری\n";
+                        continue;
+                    }
+                    
+                    // بررسی اینکه آیا دو کاربر قبلاً دوست هستند
+                    $userExtra = \Application\Model\DB::table('users_extra')->where('user_id', $user['id'])->first();
+                    if ($userExtra && isset($userExtra['friends'])) {
+                        $friends = json_decode($userExtra['friends'], true);
+                        if (is_array($friends) && in_array($target_user_id, $friends)) {
+                            answerCallbackQuery($_ENV['TELEGRAM_TOKEN'], $callback_query['id'], "⚠️ شما و این کاربر در حال حاضر دوست هستید!");
+                            echo "خطا: کاربران قبلاً دوست هستند\n";
+                            continue;
+                        }
+                    }
+                    
+                    // ثبت درخواست دوستی در جدول friend_requests
+                    \Application\Model\DB::table('friend_requests')->insert([
+                        'from_user_id' => $user['id'],
+                        'to_user_id' => $target_user_id,
+                        'status' => 'pending',
+                        'created_at' => date('Y-m-d H:i:s')
+                    ]);
+                    
+                    // پاسخ به کاربر
+                    answerCallbackQuery($_ENV['TELEGRAM_TOKEN'], $callback_query['id'], "✅ درخواست دوستی با موفقیت ارسال شد!");
+                    echo "درخواست دوستی از کاربر {$user['id']} به کاربر {$target_user_id} ثبت شد\n";
+                    
+                    // اطلاع‌رسانی به کاربر هدف
+                    if (isset($target_user['telegram_id'])) {
+                        $message = "🔔 شما یک درخواست دوستی جدید دارید!\n\nکاربر {$user['username']} شما را به عنوان دوست اضافه کرده است.\n\nبرای مشاهده درخواست‌های دوستی، به منوی دوستان > درخواست‌های دوستی بروید.";
+                        sendMessage($_ENV['TELEGRAM_TOKEN'], $target_user['telegram_id'], $message);
+                        echo "اطلاع‌رسانی به کاربر هدف انجام شد\n";
+                    }
+                    
+                } catch (Exception $e) {
+                    echo "خطا در پردازش درخواست دوستی: " . $e->getMessage() . "\n";
+                    answerCallbackQuery($_ENV['TELEGRAM_TOKEN'], $callback_query['id'], "⚠️ خطا در پردازش درخواست دوستی: " . $e->getMessage());
+                }
+            }
+            
+            // پردازش دکمه صدا زدن کاربر در بازی
+            else if (strpos($callback_data, 'notify_opponent:') === 0) {
+                try {
+                    // استخراج آیدی بازی
+                    $match_id = substr($callback_data, strlen('notify_opponent:'));
+                    
+                    // دریافت اطلاعات بازی
+                    $match = \Application\Model\DB::table('matches')->where('id', $match_id)->first();
+                    if (!$match) {
+                        answerCallbackQuery($_ENV['TELEGRAM_TOKEN'], $callback_query['id'], "⚠️ خطا: بازی مورد نظر یافت نشد!");
+                        echo "خطا: بازی {$match_id} در دیتابیس یافت نشد\n";
+                        continue;
+                    }
+                    
+                    // تعیین حریف کاربر فعلی
+                    $opponent_id = ($match['player1'] == $user_id) ? $match['player2'] : $match['player1'];
+                    
+                    if (!$opponent_id) {
+                        answerCallbackQuery($_ENV['TELEGRAM_TOKEN'], $callback_query['id'], "⚠️ خطا: اطلاعات حریف کامل نیست!");
+                        echo "خطا: اطلاعات حریف در بازی {$match_id} کامل نیست\n";
+                        continue;
+                    }
+                    
+                    // اطلاع‌رسانی به حریف
+                    sendMessage($_ENV['TELEGRAM_TOKEN'], $opponent_id, "🔔 نوبت توعه! بازی کن.");
+                    answerCallbackQuery($_ENV['TELEGRAM_TOKEN'], $callback_query['id'], "✅ به حریف شما اطلاع داده شد!");
+                    echo "اطلاع‌رسانی به حریف با آیدی {$opponent_id} انجام شد\n";
+                    
+                } catch (Exception $e) {
+                    echo "خطا در اطلاع‌رسانی به حریف: " . $e->getMessage() . "\n";
+                    answerCallbackQuery($_ENV['TELEGRAM_TOKEN'], $callback_query['id'], "⚠️ خطا در اطلاع‌رسانی به حریف: " . $e->getMessage());
+                }
+            }
+            
+            // پاسخ به نظرسنجی پایان بازی
+            else if (strpos($callback_data, 'end_chat:') === 0) {
+                try {
+                    $parts = explode(':', $callback_data);
+                    $match_id = $parts[1];
+                    $action = $parts[2]; // extend یا end
+                    
+                    // دریافت اطلاعات بازی
+                    $match = \Application\Model\DB::table('matches')->where('id', $match_id)->first();
+                    if (!$match) {
+                        answerCallbackQuery($_ENV['TELEGRAM_TOKEN'], $callback_query['id'], "⚠️ خطا: بازی مورد نظر یافت نشد!");
+                        echo "خطا: بازی {$match_id} در دیتابیس یافت نشد\n";
+                        continue;
+                    }
+                    
+                    if ($action === 'extend') {
+                        // افزایش زمان چت به 5 دقیقه
+                        \Application\Model\DB::table('matches')
+                            ->where('id', $match_id)
+                            ->update(['chat_end_time' => date('Y-m-d H:i:s', strtotime('+5 minutes'))]);
+                        
+                        // اطلاع‌رسانی به هر دو بازیکن
+                        $message = "مقدار زمان چتِ بعد از بازی شما به 5 دقیقه افزایش یافت";
+                        
+                        // ارسال به هر دو بازیکن
+                        sendMessage($_ENV['TELEGRAM_TOKEN'], $match['player1'], $message);
+                        sendMessage($_ENV['TELEGRAM_TOKEN'], $match['player2'], $message);
+                        
+                        // تنظیم تایمر برای اطلاع‌رسانی 30 ثانیه آخر
+                        // در یک سیستم واقعی، این کار باید با کرون جاب انجام شود
+                        
+                        answerCallbackQuery($_ENV['TELEGRAM_TOKEN'], $callback_query['id'], "✅ زمان چت به 5 دقیقه افزایش یافت.");
+                        echo "زمان چت برای بازی {$match_id} به 5 دقیقه افزایش یافت\n";
+                        
+                        // ویرایش پیام نظرسنجی برای جلوگیری از انتخاب مجدد
+                        $new_text = "زمان چت به 5 دقیقه افزایش یافت. ✅";
+                        editMessageText($_ENV['TELEGRAM_TOKEN'], $chat_id, $message_id, $new_text);
+                    } 
+                    else if ($action === 'end') {
+                        // پایان چت و برگشت به منوی اصلی
+                        $message = "بسیار خب. بازی شما به اتمام رسید چه کاری میتونم برات انجام بدم؟";
+                        
+                        // ارسال منوی اصلی به هر دو بازیکن
+                        $keyboard = json_encode([
+                            'keyboard' => [
+                                [['text' => '👀 بازی با ناشناس'], ['text' => '🏆شرکت در مسابقه 8 نفره + جایزه🎁']],
+                                [['text' => '👥 دوستان'], ['text' => '💸 کسب درآمد 💸']],
+                                [['text' => '👤 حساب کاربری'], ['text' => '🏆نفرات برتر•']],
+                                [['text' => '• پشتیبانی👨‍💻'], ['text' => '⁉️راهنما •']]
+                            ],
+                            'resize_keyboard' => true
+                        ]);
+                        
+                        sendMessageWithKeyboard($_ENV['TELEGRAM_TOKEN'], $match['player1'], $message, $keyboard);
+                        sendMessageWithKeyboard($_ENV['TELEGRAM_TOKEN'], $match['player2'], $message, $keyboard);
+                        
+                        answerCallbackQuery($_ENV['TELEGRAM_TOKEN'], $callback_query['id'], "✅ چت پایان یافت و به منوی اصلی بازگشتید.");
+                        echo "چت برای بازی {$match_id} پایان یافت\n";
+                        
+                        // ویرایش پیام نظرسنجی برای جلوگیری از انتخاب مجدد
+                        $new_text = "چت پایان یافت. ✅";
+                        editMessageText($_ENV['TELEGRAM_TOKEN'], $chat_id, $message_id, $new_text);
+                    }
+                    
+                } catch (Exception $e) {
+                    echo "خطا در پردازش نظرسنجی پایان بازی: " . $e->getMessage() . "\n";
+                    answerCallbackQuery($_ENV['TELEGRAM_TOKEN'], $callback_query['id'], "⚠️ خطا: " . $e->getMessage());
+                }
+            }
+            
+            // ری‌اکشن به پیام
+            else if (strpos($callback_data, 'reaction:') === 0) {
+                try {
+                    $parts = explode(':', $callback_data);
+                    $message_id = $parts[1];
+                    $reaction = $parts[2];
+                    
+                    // لیست ایموجی‌های iPhone-style
+                    $reactions = [
+                        'like' => '👍',
+                        'dislike' => '👎',
+                        'love' => '❤️',
+                        'laugh' => '😂',
+                        'wow' => '😮',
+                        'sad' => '😢',
+                        'angry' => '😡',
+                        'clap' => '👏',
+                        'fire' => '🔥',
+                        'party' => '🎉'
+                    ];
+                    
+                    if (!isset($reactions[$reaction])) {
+                        answerCallbackQuery($_ENV['TELEGRAM_TOKEN'], $callback_query['id'], "⚠️ خطا: ری‌اکشن نامعتبر!");
+                        continue;
+                    }
+                    
+                    // ارسال ری‌اکشن (در تلگرام واقعی باید از متد reaction استفاده شود)
+                    // اینجا فقط یک پیام نمایش می‌دهیم
+                    answerCallbackQuery($_ENV['TELEGRAM_TOKEN'], $callback_query['id'], $reactions[$reaction], true);
+                    
+                    echo "ری‌اکشن {$reactions[$reaction]} به پیام {$message_id} اضافه شد\n";
+                    
+                } catch (Exception $e) {
+                    echo "خطا در پردازش ری‌اکشن: " . $e->getMessage() . "\n";
+                    answerCallbackQuery($_ENV['TELEGRAM_TOKEN'], $callback_query['id'], "⚠️ خطا: " . $e->getMessage());
+                }
+            }
+            
+            // در اینجا می‌توان سایر انواع callback_query را پردازش کرد
+            
+            continue;
+        }
+        
         // پردازش پیام‌های متنی
         if (isset($update['message']) && isset($update['message']['text'])) {
             $text = $update['message']['text'];
@@ -291,6 +519,61 @@ while (true) {
                 echo "برگشت به منوی اصلی\n";
             }
             
+            // پاسخ به دستور /username (نمایش مشخصات کاربر)
+            else if (strpos($text, '/') === 0 && $text !== '/start' && $text !== '/cancel') {
+                try {
+                    // حذف اسلش از ابتدای نام کاربری
+                    $username = ltrim($text, '/');
+                    
+                    // جستجوی کاربر بر اساس نام کاربری
+                    $userData = \Application\Model\DB::table('users')->where('username', $username)->select('*')->first();
+                    
+                    if (!$userData) {
+                        sendMessage($_ENV['TELEGRAM_TOKEN'], $chat_id, "⚠️ کاربری با این نام کاربری یافت نشد!");
+                        echo "خطا: کاربر {$username} در دیتابیس یافت نشد\n";
+                        return;
+                    }
+                    
+                    $userExtra = \Application\Model\DB::table('users_extra')->where('user_id', $userData['id'])->select('*')->first();
+                    if (!$userExtra) {
+                        sendMessage($_ENV['TELEGRAM_TOKEN'], $chat_id, "⚠️ خطا در دریافت اطلاعات اضافی کاربر");
+                        echo "خطا: اطلاعات اضافی کاربر {$username} یافت نشد\n";
+                        return;
+                    }
+                    
+                    // آماده‌سازی اطلاعات کاربر برای نمایش
+                    $win_rate = isset($userExtra['win_rate']) ? strval(number_format($userExtra['win_rate'], 2)) . "%" : "0%";
+                    $cups = isset($userExtra['cups']) ? $userExtra['cups'] : 0;
+                    $matches = isset($userExtra['matches']) ? $userExtra['matches'] : 0;
+                    
+                    // ساخت متن پاسخ
+                    $message = "
+🪪 اطلاعات کاربر {$userData['username']} :
+
+🎮 تعداد بازی‌های انجام شده: {$matches}
+➗ درصد برد: {$win_rate}
+🏆 تعداد جام: {$cups}
+                    ";
+                    
+                    // ایجاد دکمه درخواست دوستی
+                    $inlineKeyboard = json_encode([
+                        'inline_keyboard' => [
+                            [
+                                ['text' => '👥 درخواست دوستی', 'callback_data' => "friend_request:{$userData['id']}"]
+                            ]
+                        ]
+                    ]);
+                    
+                    // ارسال پیام با دکمه درخواست دوستی
+                    sendMessageWithKeyboard($_ENV['TELEGRAM_TOKEN'], $chat_id, $message, $inlineKeyboard);
+                    echo "اطلاعات کاربر {$username} ارسال شد\n";
+                    
+                } catch (Exception $e) {
+                    echo "خطا در دریافت اطلاعات کاربر {$username}: " . $e->getMessage() . "\n";
+                    sendMessage($_ENV['TELEGRAM_TOKEN'], $chat_id, "⚠️ خطا در دریافت اطلاعات: " . $e->getMessage());
+                }
+            }
+            
             // پاسخ به دستور /start
             else if (strpos($text, '/start') === 0) {
                 $first_name = isset($update['message']['from']['first_name']) ? $update['message']['from']['first_name'] : 'کاربر';
@@ -357,7 +640,7 @@ function getUpdatesViaFopen($token, $offset = 0) {
         'offset' => $offset,
         'timeout' => 1,
         'limit' => 10,
-        'allowed_updates' => json_encode(["message"])
+        'allowed_updates' => json_encode(["message", "callback_query"])
     ];
     
     $url .= '?' . http_build_query($params);
@@ -394,6 +677,57 @@ function sendMessageWithKeyboard($token, $chat_id, $text, $keyboard) {
         'text' => $text,
         'reply_markup' => $keyboard
     ];
+    
+    $ch = curl_init();
+    curl_setopt($ch, CURLOPT_URL, $url);
+    curl_setopt($ch, CURLOPT_POST, 1);
+    curl_setopt($ch, CURLOPT_POSTFIELDS, $params);
+    curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+    $result = curl_exec($ch);
+    curl_close($ch);
+    
+    return $result;
+}
+
+/**
+ * پاسخ به callback_query از دکمه‌های inline
+ */
+function answerCallbackQuery($token, $callback_query_id, $text = null, $show_alert = false) {
+    $url = "https://api.telegram.org/bot{$token}/answerCallbackQuery";
+    $params = [
+        'callback_query_id' => $callback_query_id,
+        'show_alert' => $show_alert
+    ];
+    
+    if ($text !== null) {
+        $params['text'] = $text;
+    }
+    
+    $ch = curl_init();
+    curl_setopt($ch, CURLOPT_URL, $url);
+    curl_setopt($ch, CURLOPT_POST, 1);
+    curl_setopt($ch, CURLOPT_POSTFIELDS, $params);
+    curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+    $result = curl_exec($ch);
+    curl_close($ch);
+    
+    return $result;
+}
+
+/**
+ * ویرایش متن پیام
+ */
+function editMessageText($token, $chat_id, $message_id, $text, $reply_markup = null) {
+    $url = "https://api.telegram.org/bot{$token}/editMessageText";
+    $params = [
+        'chat_id' => $chat_id,
+        'message_id' => $message_id,
+        'text' => $text
+    ];
+    
+    if ($reply_markup !== null) {
+        $params['reply_markup'] = $reply_markup;
+    }
     
     $ch = curl_init();
     curl_setopt($ch, CURLOPT_URL, $url);
