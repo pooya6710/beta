@@ -77,18 +77,28 @@ function getUpdates($token, $offset = 0) {
     $url = "https://api.telegram.org/bot{$token}/getUpdates";
     $params = [
         'offset' => $offset,
-        'timeout' => 5,
+        'timeout' => 1, // کاهش زمان انتظار به 1 ثانیه
+        'limit' => 10,  // محدود کردن تعداد آپدیت‌های دریافتی
         'allowed_updates' => json_encode(["message", "callback_query", "inline_query"])
     ];
     
     $url .= '?' . http_build_query($params);
     
-    $response = @file_get_contents($url);
+    // استفاده از CURL برای دقت بیشتر
+    $ch = curl_init();
+    curl_setopt($ch, CURLOPT_URL, $url);
+    curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+    curl_setopt($ch, CURLOPT_CONNECTTIMEOUT, 5);
+    curl_setopt($ch, CURLOPT_TIMEOUT, 10);
+    $response = curl_exec($ch);
+    
     if ($response === false) {
-        echo "خطا در دریافت آپدیت‌ها\n";
+        echo "خطا در دریافت آپدیت‌ها: " . curl_error($ch) . "\n";
+        curl_close($ch);
         return false;
     }
     
+    curl_close($ch);
     return json_decode($response, true);
 }
 
