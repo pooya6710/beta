@@ -234,6 +234,72 @@ while (true) {
                 }
             }
             
+            // پاسخ به تأیید تغییر نام کاربری
+            else if (strpos($callback_data, 'confirm_username_change:') === 0) {
+                try {
+                    $parts = explode(':', $callback_data);
+                    $new_username = $parts[1];
+                    $response = $parts[2]; // yes یا no
+                    
+                    // دریافت اطلاعات کاربر
+                    $userData = \Application\Model\DB::table('users')->where('telegram_id', $user_id)->first();
+                    if (!$userData) {
+                        answerCallbackQuery($_ENV['TELEGRAM_TOKEN'], $callback_query['id'], "⚠️ خطا: اطلاعات کاربری یافت نشد!");
+                        continue;
+                    }
+                    
+                    // حذف فایل وضعیت کاربر
+                    $user_state_file = __DIR__ . "/user_states/{$user_id}.json";
+                    if (file_exists($user_state_file)) {
+                        unlink($user_state_file);
+                    }
+                    
+                    if ($response === 'yes') {
+                        // دریافت اطلاعات اضافی کاربر برای کسر هزینه
+                        $userExtra = \Application\Model\DB::table('users_extra')->where('user_id', $userData['id'])->first();
+                        if (!$userExtra) {
+                            answerCallbackQuery($_ENV['TELEGRAM_TOKEN'], $callback_query['id'], "⚠️ خطا: اطلاعات اضافی کاربر یافت نشد!");
+                            continue;
+                        }
+                        
+                        // بررسی کافی بودن موجودی
+                        $delta_coins = isset($userExtra['delta_coins']) ? $userExtra['delta_coins'] : 0;
+                        if ($delta_coins < 10) {
+                            sendMessage($_ENV['TELEGRAM_TOKEN'], $chat_id, "⚠️ موجودی شما {$delta_coins} دلتاکوین میباشد. مقدار دلتاکوین موردنیاز جهت تغییر نام کاربری 10 عدد میباشد!");
+                            continue;
+                        }
+                        
+                        // به روزرسانی نام کاربری
+                        \Application\Model\DB::table('users')
+                            ->where('id', $userData['id'])
+                            ->update(['username' => $new_username]);
+                        
+                        // کسر هزینه تغییر نام کاربری
+                        \Application\Model\DB::table('users_extra')
+                            ->where('user_id', $userData['id'])
+                            ->update(['delta_coins' => $delta_coins - 10]);
+                        
+                        // ارسال پیام موفقیت
+                        sendMessage($_ENV['TELEGRAM_TOKEN'], $chat_id, "✅ نام کاربری شما با موفقیت به «{$new_username}» تغییر یافت و 10 دلتاکوین از حساب شما کسر شد.");
+                        answerCallbackQuery($_ENV['TELEGRAM_TOKEN'], $callback_query['id'], "✅ نام کاربری با موفقیت تغییر یافت");
+                    } else {
+                        // لغو تغییر نام کاربری
+                        sendMessage($_ENV['TELEGRAM_TOKEN'], $chat_id, "❌ تغییر نام کاربری لغو شد.");
+                        answerCallbackQuery($_ENV['TELEGRAM_TOKEN'], $callback_query['id'], "❌ تغییر نام کاربری لغو شد");
+                    }
+                    
+                    // ویرایش پیام کالبک
+                    $new_text = $response === 'yes' 
+                        ? "✅ نام کاربری به {$new_username} تغییر یافت."
+                        : "❌ تغییر نام کاربری لغو شد.";
+                    editMessageText($_ENV['TELEGRAM_TOKEN'], $chat_id, $message_id, $new_text);
+                    
+                } catch (Exception $e) {
+                    echo "خطا در پردازش تغییر نام کاربری: " . $e->getMessage() . "\n";
+                    answerCallbackQuery($_ENV['TELEGRAM_TOKEN'], $callback_query['id'], "⚠️ خطا: " . $e->getMessage());
+                }
+            }
+            
             // ری‌اکشن به پیام
             else if (strpos($callback_data, 'reaction:') === 0) {
                 try {
@@ -717,6 +783,75 @@ while (true) {
             
             echo "پیام از {$username}: {$text}\n";
             
+            // بررسی وضعیت کاربر برای تغییر نام کاربری و سایر حالت‌های ویژه
+            try {
+                // بررسی آیا کاربر در حالت تغییر نام کاربری است
+                $user_state_file = __DIR__ . "/user_states/{$user_id}.json";
+                if (file_exists($user_state_file)) {
+                    $userState = json_decode(file_get_contents($user_state_file), true);
+                    
+                    // پردازش حالت تغییر نام کاربری
+                    if (isset($userState['state']) && $userState['state'] === 'change_username') {
+                        // دریافت اطلاعات کاربر از دیتابیس
+                        $userData = \Application\Model\DB::table('users')->where('telegram_id', $user_id)->select('*')->first();
+                        
+                        if (!$userData) {
+                            sendMessage($_ENV['TELEGRAM_TOKEN'], $chat_id, "⚠️ خطا در دریافت اطلاعات کاربری");
+                            echo "خطا: کاربر در دیتابیس یافت نشد\n";
+                            unlink($user_state_file); // حذف فایل وضعیت
+                            continue;
+                        }
+                        
+                        // دریافت اطلاعات اضافی کاربر
+                        $userExtra = \Application\Model\DB::table('users_extra')->where('user_id', $userData['id'])->select('*')->first();
+                        if (!$userExtra) {
+                            sendMessage($_ENV['TELEGRAM_TOKEN'], $chat_id, "⚠️ خطا در دریافت اطلاعات اضافی کاربر");
+                            echo "خطا: اطلاعات اضافی کاربر یافت نشد\n";
+                            unlink($user_state_file); // حذف فایل وضعیت
+                            continue;
+                        }
+                        
+                        if ($userState['step'] === 'waiting_for_username') {
+                            // بررسی نام کاربری جدید
+                            $new_username = trim($text);
+                            
+                            // بررسی وجود کاربر دیگر با همین نام کاربری
+                            $existingUser = \Application\Model\DB::table('users')
+                                ->where('username', $new_username)
+                                ->where('id', '!=', $userData['id'])
+                                ->first();
+                            
+                            if ($existingUser) {
+                                sendMessage($_ENV['TELEGRAM_TOKEN'], $chat_id, "⚠️ این نام کاربری قبلاً توسط کاربر دیگری انتخاب شده است. لطفاً نام کاربری دیگری انتخاب کنید.");
+                                continue;
+                            }
+                            
+                            // تایید نام کاربری
+                            $confirm_message = "آیا مطمئنید میخواهید {$new_username} را برای نام کاربری خود استفاده کنید؟";
+                            $confirm_keyboard = json_encode([
+                                'inline_keyboard' => [
+                                    [
+                                        ['text' => 'بله', 'callback_data' => "confirm_username_change:{$new_username}:yes"],
+                                        ['text' => 'خیر', 'callback_data' => "confirm_username_change:{$new_username}:no"]
+                                    ]
+                                ]
+                            ]);
+                            
+                            sendMessageWithKeyboard($_ENV['TELEGRAM_TOKEN'], $chat_id, $confirm_message, $confirm_keyboard);
+                            
+                            // آپدیت وضعیت کاربر به مرحله تایید
+                            $userState['step'] = 'waiting_for_confirmation';
+                            $userState['new_username'] = $new_username;
+                            file_put_contents($user_state_file, json_encode($userState));
+                            
+                            continue;
+                        }
+                    }
+                }
+            } catch (Exception $e) {
+                echo "خطا در پردازش وضعیت کاربر: " . $e->getMessage() . "\n";
+            }
+            
             // بررسی پیام چت بازی
             $active_match = getActiveMatchForUser($user_id);
             if ($active_match && $text[0] !== '/') {
@@ -926,6 +1061,7 @@ while (true) {
                     $keyboard = json_encode([
                         'keyboard' => [
                             [['text' => '📝 پروفایل'], ['text' => '🏆 وضعیت زیرمجموعه ها']],
+                            [['text' => '📝 تغییر نام کاربری']],
                             [['text' => 'لغو ❌']]
                         ],
                         'resize_keyboard' => true
@@ -1043,6 +1179,62 @@ while (true) {
                 
                 sendMessage($_ENV['TELEGRAM_TOKEN'], $chat_id, $message);
                 echo "اطلاعات راهنما ارسال شد\n";
+            }
+
+            // تغییر نام کاربری
+            else if (strpos($text, 'تغییر نام کاربری') !== false) {
+                try {
+                    // دریافت اطلاعات کاربر از دیتابیس
+                    $userData = \Application\Model\DB::table('users')->where('telegram_id', $user_id)->select('*')->first();
+                    
+                    if (!$userData) {
+                        sendMessage($_ENV['TELEGRAM_TOKEN'], $chat_id, "⚠️ خطا در دریافت اطلاعات کاربری");
+                        echo "خطا: کاربر در دیتابیس یافت نشد\n";
+                        return;
+                    }
+                    
+                    // دریافت اطلاعات اضافی کاربر
+                    $userExtra = \Application\Model\DB::table('users_extra')->where('user_id', $userData['id'])->select('*')->first();
+                    if (!$userExtra) {
+                        sendMessage($_ENV['TELEGRAM_TOKEN'], $chat_id, "⚠️ خطا در دریافت اطلاعات اضافی کاربر");
+                        echo "خطا: اطلاعات اضافی کاربر یافت نشد\n";
+                        return;
+                    }
+                    
+                    // بررسی موجودی دلتا کوین
+                    $delta_coins = isset($userExtra['delta_coins']) ? $userExtra['delta_coins'] : 0;
+                    
+                    // ارسال پیام درخواست تغییر نام کاربری
+                    $message = "شما میتوانید با 10 دلتاکوین نام کاربری خود را عوض کنید\nچنانچه قصد تغییر آن را دارید، نام کاربری جدیدتان را ارسال کنید\n";
+                    $message .= "نام کاربری فعلی: /{$userData['username']}\n";
+                    
+                    if ($delta_coins < 10) {
+                        $message .= "\nموجودی شما {$delta_coins} دلتاکوین میباشد. مقدار دلتاکوین موردنیاز جهت تغییر نام کاربری 10 عدد میباشد!";
+                        sendMessage($_ENV['TELEGRAM_TOKEN'], $chat_id, $message);
+                        return;
+                    }
+                    
+                    sendMessage($_ENV['TELEGRAM_TOKEN'], $chat_id, $message);
+                    
+                    // ذخیره وضعیت کاربر در حالت تغییر نام کاربری
+                    try {
+                        $userState = [
+                            'state' => 'change_username',
+                            'step' => 'waiting_for_username'
+                        ];
+                        
+                        // ذخیره وضعیت در دیتابیس یا فایل
+                        // فعلاً به صورت ساده پیاده‌سازی می‌کنیم
+                        file_put_contents(__DIR__ . "/user_states/{$user_id}.json", json_encode($userState));
+                    } catch (Exception $e) {
+                        echo "خطا در ذخیره وضعیت کاربر: " . $e->getMessage() . "\n";
+                    }
+                    
+                    echo "درخواست تغییر نام کاربری برای کاربر {$user_id} ارسال شد\n";
+                } catch (Exception $e) {
+                    echo "خطا در پردازش درخواست تغییر نام کاربری: " . $e->getMessage() . "\n";
+                    sendMessage($_ENV['TELEGRAM_TOKEN'], $chat_id, "⚠️ خطا در پردازش درخواست: " . $e->getMessage());
+                }
             }
             
             // پروفایل کاربر
