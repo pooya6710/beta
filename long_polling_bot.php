@@ -142,6 +142,11 @@ function processUpdate($update) {
                     $telegram->sendMessage("%message.ref_joined[doz_coin:$doz_coin]%")->send($ref_telegram_id);
                 }
             }
+        } else {
+            // پاسخ به دستور /start ساده
+            $user = new User($update);
+            $telegram->sendMessage("%message.start[firstname:$first_name]%")->keyboard('main.home')->replay()->send();
+            return; // خروج از تابع پس از ارسال پیام
         }
     }
 
