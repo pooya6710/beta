@@ -892,19 +892,24 @@ while (true) {
                     $match_rank = 1; // فرض
                     $winRate_rank = 1; // فرض
                     
-                    // بررسی دوستان
-                    $friends = json_decode($userExtra['friends'], true);
+                    // بررسی دوستان (با در نظر گرفتن مقادیر خالی)
+                    $friends = isset($userExtra['friends']) ? json_decode($userExtra['friends'], true) : null;
                     $friends_count = is_array($friends) ? count($friends) : 0;
                     
+                    // اطمینان از وجود سایر مقادیر
+                    $matches = isset($userExtra['matches']) ? $userExtra['matches'] : 0;
+                    $win_rate = isset($userExtra['win_rate']) ? strval(number_format($userExtra['win_rate'], 2)) . "%" : "0%";
+                    $cups = isset($userExtra['cups']) ? $userExtra['cups'] : 0;
+                    $doz_coin = isset($userExtra['doz_coin']) ? $userExtra['doz_coin'] : 0;
+                    
                     // ساخت متن پاسخ
-                    $win_rate = strval(number_format($userExtra['win_rate'], 2)) . "%";
                     $message = "
 🪪 حساب کاربری شما به شرح زیر میباشد :
 
  🆔 نام کاربری :      /{$userData['username']}
 🔢 آیدی عددی :      {$userData['telegram_id']}
 
-🎮 تعداد بازیهای انجام شده:      {$userExtra['matches']}
+🎮 تعداد بازیهای انجام شده:      {$matches}
 🔆 رتبه تعداد بازی بین کاربران:     {$match_rank}
 
 ➗ درصد برد در کل بازیها:     {$win_rate}
@@ -913,8 +918,8 @@ while (true) {
 🥇 تعداد قهرمانی در مسابقه: coming soon
 🎊 رتبه قهرمانی در مسابقه: coming soon
 
-🏆 موجودی جام:     {$userExtra['cups']}
- 💎 موجودی دلتاکوین:     {$userExtra['doz_coin']}
+🏆 موجودی جام:     {$cups}
+ 💎 موجودی دلتاکوین:     {$doz_coin}
 
 👥 تعداد دوستان:     {$friends_count}
 ⏰ تاریخ و ساعت ورود:     {$userData['created_at']}
@@ -1520,6 +1525,33 @@ while (true) {
             else if (isset($update['message']) && 
                    (!isset($update['message']['entities']) || $update['message']['entities'][0]['type'] !== 'bot_command')) {
                 try {
+                    // اول بررسی شود آیا دکمه لغو زده شده است
+                    if ($text === 'لغو ❌') {
+                        // برگشت به منوی اصلی
+                        $keyboard = json_encode([
+                            'keyboard' => [
+                                [['text' => '👀 بازی با ناشناس'], ['text' => '🏆شرکت در مسابقه 8 نفره + جایزه🎁']],
+                                [['text' => '👥 دوستان'], ['text' => '💸 کسب درآمد 💸']],
+                                [['text' => '👤 حساب کاربری'], ['text' => '🏆نفرات برتر•']],
+                                [['text' => '• پشتیبانی👨‍💻'], ['text' => '⁉️راهنما •']]
+                            ],
+                            'resize_keyboard' => true
+                        ]);
+                        
+                        // پاک کردن وضعیت کاربر
+                        $userData = \Application\Model\DB::table('users')->where('telegram_id', $user_id)->select('*')->first();
+                        if ($userData) {
+                            \Application\Model\DB::rawQuery(
+                                "UPDATE users SET state = ? WHERE id = ?", 
+                                [json_encode(['state' => '', 'step' => '']), $userData['id']]
+                            );
+                        }
+                        
+                        sendMessageWithKeyboard($_ENV['TELEGRAM_TOKEN'], $chat_id, "🎮 منوی اصلی:", $keyboard);
+                        echo "برگشت به منوی اصلی\n";
+                        continue;
+                    }
+
                     // دریافت اطلاعات کاربر و وضعیت فعلی
                     $userData = \Application\Model\DB::table('users')->where('telegram_id', $user_id)->select('*')->first();
                     
@@ -2032,34 +2064,10 @@ while (true) {
                 }
             }
             
-            // دکمه لغو
+            // دکمه لغو (قبلاً به بخش دیگری منتقل شده است)
             else if ($text === 'لغو ❌') {
-                try {
-                    // برگشت به منوی اصلی
-                    $keyboard = json_encode([
-                        'keyboard' => [
-                            [['text' => '👀 بازی با ناشناس'], ['text' => '🏆شرکت در مسابقه 8 نفره + جایزه🎁']],
-                            [['text' => '👥 دوستان'], ['text' => '💸 کسب درآمد 💸']],
-                            [['text' => '👤 حساب کاربری'], ['text' => '🏆نفرات برتر•']],
-                            [['text' => '• پشتیبانی👨‍💻'], ['text' => '⁉️راهنما •']]
-                        ],
-                        'resize_keyboard' => true
-                    ]);
-                    
-                    // پاک کردن وضعیت کاربر
-                    $userData = \Application\Model\DB::table('users')->where('telegram_id', $user_id)->select('*')->first();
-                    if ($userData) {
-                        \Application\Model\DB::rawQuery(
-                            "UPDATE users SET state = ? WHERE id = ?", 
-                            [json_encode(['state' => '', 'step' => '']), $userData['id']]
-                        );
-                    }
-                    
-                    sendMessageWithKeyboard($_ENV['TELEGRAM_TOKEN'], $chat_id, "🎮 منوی اصلی:", $keyboard);
-                    echo "برگشت به منوی اصلی\n";
-                } catch (Exception $e) {
-                    echo "خطا در بازگشت به منوی اصلی: " . $e->getMessage() . "\n";
-                }
+                // این قسمت دیگر اجرا نمی‌شود و در ابتدای پردازش پیام‌ها قرار گرفته است
+                echo "این قسمت دیگر استفاده نمی‌شود.\n";
             }
             
             // پاسخ به دستور /username (نمایش مشخصات کاربر)
