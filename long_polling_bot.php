@@ -2570,8 +2570,11 @@ while (true) {
                         'keyboard' => [
                             [['text' => '📊 آمار ربات']],
                             [['text' => '📨 پیام همگانی'], ['text' => '📤 فوروارد همگانی']],
-                            [['text' => '👥 مدیریت ادمین‌ها']],
-                            [['text' => '🔗 قفل گروه/کانال']],
+                            [['text' => '👥 مدیریت ادمین‌ها'], ['text' => '👤 مدیریت کاربران']],
+                            [['text' => '🔗 قفل گروه/کانال'], ['text' => '🔒 قفل آیدی']],
+                            [['text' => '⚙️ تنظیمات ربات'], ['text' => '📱 وضعیت سرور']],
+                            [['text' => '💰 تنظیم قیمت دلتا'], ['text' => '💸 تنظیم پورسانت']],
+                            [['text' => '🔄 روشن/خاموش ربات'], ['text' => '📝 لیست برداشت ها']],
                             [['text' => '🔙 بازگشت به منوی اصلی']]
                         ],
                         'resize_keyboard' => true
@@ -2749,6 +2752,483 @@ while (true) {
                     echo "درخواست قفل گروه/کانال دریافت شد\n";
                 } catch (Exception $e) {
                     echo "خطا در پردازش قفل گروه/کانال: " . $e->getMessage() . "\n";
+                    sendMessage($_ENV['TELEGRAM_TOKEN'], $chat_id, "⚠️ خطا در پردازش درخواست: " . $e->getMessage());
+                }
+            }
+            
+            // قفل آیدی
+            else if (strpos($text, 'قفل آیدی') !== false) {
+                try {
+                    require_once __DIR__ . '/application/controllers/AdminController.php';
+                    $adminController = new \application\controllers\AdminController($user_id);
+                    
+                    // بررسی دسترسی ادمین
+                    if (!$adminController->isAdmin() || !$adminController->hasPermission('can_lock_usernames')) {
+                        sendMessage($_ENV['TELEGRAM_TOKEN'], $chat_id, "⚠️ شما دسترسی لازم برای این بخش را ندارید.");
+                        continue;
+                    }
+                    
+                    $message = "🔒 *قفل آیدی*\n\n";
+                    $message .= "لطفاً نام کاربری که می‌خواهید قفل کنید را وارد کنید (با یا بدون @):\n";
+                    $message .= "این نام کاربری برای همه کاربران قفل خواهد شد و کسی نمی‌تواند آن را انتخاب کند.";
+                    
+                    // کیبورد لغو
+                    $cancel_keyboard = json_encode([
+                        'keyboard' => [
+                            [['text' => 'لغو ❌']]
+                        ],
+                        'resize_keyboard' => true
+                    ]);
+                    
+                    sendMessageWithKeyboard($_ENV['TELEGRAM_TOKEN'], $chat_id, $message, $cancel_keyboard);
+                    
+                    // ذخیره وضعیت ادمین
+                    $userState = [
+                        'state' => 'admin_panel',
+                        'step' => 'waiting_for_username_to_lock'
+                    ];
+                    \Application\Model\DB::table('users')
+                        ->where('telegram_id', $user_id)
+                        ->update(['state' => json_encode($userState)]);
+                        
+                    echo "درخواست قفل آیدی دریافت شد\n";
+                } catch (Exception $e) {
+                    echo "خطا در پردازش قفل آیدی: " . $e->getMessage() . "\n";
+                    sendMessage($_ENV['TELEGRAM_TOKEN'], $chat_id, "⚠️ خطا در پردازش درخواست: " . $e->getMessage());
+                }
+            }
+            
+            // مدیریت کاربران
+            else if (strpos($text, 'مدیریت کاربران') !== false) {
+                try {
+                    require_once __DIR__ . '/application/controllers/AdminController.php';
+                    $adminController = new \application\controllers\AdminController($user_id);
+                    
+                    // بررسی دسترسی ادمین
+                    if (!$adminController->isAdmin() || !$adminController->hasPermission('can_manage_users')) {
+                        sendMessage($_ENV['TELEGRAM_TOKEN'], $chat_id, "⚠️ شما دسترسی لازم برای این بخش را ندارید.");
+                        continue;
+                    }
+                    
+                    $message = "👤 *مدیریت کاربران*\n\n";
+                    $message .= "لطفاً آیدی عددی، نام کاربری یا شناسه کاربر مورد نظر را وارد کنید:";
+                    
+                    // کیبورد لغو
+                    $cancel_keyboard = json_encode([
+                        'keyboard' => [
+                            [['text' => 'لغو ❌']]
+                        ],
+                        'resize_keyboard' => true
+                    ]);
+                    
+                    sendMessageWithKeyboard($_ENV['TELEGRAM_TOKEN'], $chat_id, $message, $cancel_keyboard);
+                    
+                    // ذخیره وضعیت ادمین
+                    $userState = [
+                        'state' => 'admin_panel',
+                        'step' => 'waiting_for_user_to_manage'
+                    ];
+                    \Application\Model\DB::table('users')
+                        ->where('telegram_id', $user_id)
+                        ->update(['state' => json_encode($userState)]);
+                        
+                    echo "درخواست مدیریت کاربران دریافت شد\n";
+                } catch (Exception $e) {
+                    echo "خطا در پردازش مدیریت کاربران: " . $e->getMessage() . "\n";
+                    sendMessage($_ENV['TELEGRAM_TOKEN'], $chat_id, "⚠️ خطا در پردازش درخواست: " . $e->getMessage());
+                }
+            }
+            
+            // تنظیمات ربات
+            else if (strpos($text, 'تنظیمات ربات') !== false) {
+                try {
+                    require_once __DIR__ . '/application/controllers/AdminController.php';
+                    $adminController = new \application\controllers\AdminController($user_id);
+                    
+                    // بررسی دسترسی ادمین
+                    if (!$adminController->isAdmin() || !$adminController->hasPermission('can_manage_settings')) {
+                        sendMessage($_ENV['TELEGRAM_TOKEN'], $chat_id, "⚠️ شما دسترسی لازم برای این بخش را ندارید.");
+                        continue;
+                    }
+                    
+                    $message = "⚙️ *تنظیمات ربات*\n\n";
+                    $message .= "لطفاً یکی از تنظیمات زیر را انتخاب کنید:";
+                    
+                    // کیبورد تنظیمات
+                    $settings_keyboard = json_encode([
+                        'keyboard' => [
+                            [['text' => '💰 تنظیم قیمت دلتا کوین']],
+                            [['text' => '💸 تنظیم پورسانت زیرمجموعه']],
+                            [['text' => '🔄 روشن/خاموش کردن ربات']],
+                            [['text' => '📝 تنظیم حداقل برداشت']],
+                            [['text' => '🔙 بازگشت به پنل مدیریت']]
+                        ],
+                        'resize_keyboard' => true
+                    ]);
+                    
+                    sendMessageWithKeyboard($_ENV['TELEGRAM_TOKEN'], $chat_id, $message, $settings_keyboard);
+                    
+                    // ذخیره وضعیت ادمین
+                    $userState = [
+                        'state' => 'admin_panel',
+                        'step' => 'settings_menu'
+                    ];
+                    \Application\Model\DB::table('users')
+                        ->where('telegram_id', $user_id)
+                        ->update(['state' => json_encode($userState)]);
+                        
+                    echo "منوی تنظیمات ربات ارسال شد\n";
+                } catch (Exception $e) {
+                    echo "خطا در پردازش تنظیمات ربات: " . $e->getMessage() . "\n";
+                    sendMessage($_ENV['TELEGRAM_TOKEN'], $chat_id, "⚠️ خطا در پردازش درخواست: " . $e->getMessage());
+                }
+            }
+            
+            // وضعیت سرور
+            else if (strpos($text, 'وضعیت سرور') !== false) {
+                try {
+                    require_once __DIR__ . '/application/controllers/AdminController.php';
+                    $adminController = new \application\controllers\AdminController($user_id);
+                    
+                    // بررسی دسترسی ادمین
+                    if (!$adminController->isAdmin()) {
+                        sendMessage($_ENV['TELEGRAM_TOKEN'], $chat_id, "⚠️ شما دسترسی لازم برای این بخش را ندارید.");
+                        continue;
+                    }
+                    
+                    // دریافت اطلاعات سرور
+                    $load = sys_getloadavg();
+                    $memory_usage = memory_get_usage();
+                    $memory_peak = memory_get_peak_usage();
+                    $free_disk = disk_free_space("/");
+                    $total_disk = disk_total_space("/");
+                    
+                    // محاسبه مقادیر با واحد مناسب
+                    $load_avg = round($load[0], 2);
+                    $memory_usage_mb = round($memory_usage / 1024 / 1024, 2);
+                    $memory_peak_mb = round($memory_peak / 1024 / 1024, 2);
+                    $free_disk_gb = round($free_disk / 1024 / 1024 / 1024, 2);
+                    $total_disk_gb = round($total_disk / 1024 / 1024 / 1024, 2);
+                    $disk_usage_percent = round(100 - ($free_disk / $total_disk * 100), 2);
+                    
+                    // ساخت متن وضعیت سرور
+                    $server_status = "📱 *وضعیت سرور*\n\n";
+                    $server_status .= "🔄 میانگین بار (Load Average): {$load_avg}\n";
+                    $server_status .= "🧠 مصرف حافظه: {$memory_usage_mb} MB\n";
+                    $server_status .= "📊 اوج مصرف حافظه: {$memory_peak_mb} MB\n";
+                    $server_status .= "💾 فضای خالی دیسک: {$free_disk_gb} GB\n";
+                    $server_status .= "💿 فضای کل دیسک: {$total_disk_gb} GB\n";
+                    $server_status .= "📈 درصد استفاده از دیسک: {$disk_usage_percent}%\n";
+                    $server_status .= "⏱️ زمان کارکرد سرور: " . trim(shell_exec('uptime -p')) . "\n";
+                    $server_status .= "🕒 زمان سرور: " . date('Y-m-d H:i:s') . "\n";
+                    
+                    // دریافت نسخه PHP
+                    $php_version = phpversion();
+                    $server_status .= "🔧 نسخه PHP: {$php_version}\n";
+                    
+                    // دریافت اطلاعات پایگاه داده
+                    $db_stats = \Application\Model\DB::rawQuery("SELECT pg_database_size(current_database()) as db_size");
+                    $db_size_bytes = $db_stats[0]['db_size'] ?? 0;
+                    $db_size_mb = round($db_size_bytes / 1024 / 1024, 2);
+                    $server_status .= "🗄️ سایز پایگاه داده: {$db_size_mb} MB\n";
+                    
+                    sendMessage($_ENV['TELEGRAM_TOKEN'], $chat_id, $server_status);
+                    echo "وضعیت سرور ارسال شد\n";
+                } catch (Exception $e) {
+                    echo "خطا در پردازش وضعیت سرور: " . $e->getMessage() . "\n";
+                    sendMessage($_ENV['TELEGRAM_TOKEN'], $chat_id, "⚠️ خطا در پردازش درخواست: " . $e->getMessage());
+                }
+            }
+            
+            // تنظیم قیمت دلتا کوین
+            else if (strpos($text, 'تنظیم قیمت دلتا') !== false) {
+                try {
+                    require_once __DIR__ . '/application/controllers/AdminController.php';
+                    $adminController = new \application\controllers\AdminController($user_id);
+                    
+                    // بررسی دسترسی ادمین
+                    if (!$adminController->isAdmin() || !$adminController->hasPermission('can_manage_settings')) {
+                        sendMessage($_ENV['TELEGRAM_TOKEN'], $chat_id, "⚠️ شما دسترسی لازم برای این بخش را ندارید.");
+                        continue;
+                    }
+                    
+                    // دریافت قیمت فعلی
+                    $current_price = \Application\Model\DB::table('bot_settings')
+                        ->where('name', 'delta_coin_price')
+                        ->select('value')
+                        ->first();
+                        
+                    $current_price_value = $current_price ? $current_price['value'] : '1000';
+                    
+                    $message = "💰 *تنظیم قیمت دلتا کوین*\n\n";
+                    $message .= "قیمت فعلی هر دلتا کوین: {$current_price_value} تومان\n\n";
+                    $message .= "لطفاً قیمت جدید را به تومان وارد کنید:";
+                    
+                    // کیبورد لغو
+                    $cancel_keyboard = json_encode([
+                        'keyboard' => [
+                            [['text' => 'لغو ❌']]
+                        ],
+                        'resize_keyboard' => true
+                    ]);
+                    
+                    sendMessageWithKeyboard($_ENV['TELEGRAM_TOKEN'], $chat_id, $message, $cancel_keyboard);
+                    
+                    // ذخیره وضعیت ادمین
+                    $userState = [
+                        'state' => 'admin_panel',
+                        'step' => 'waiting_for_delta_coin_price'
+                    ];
+                    \Application\Model\DB::table('users')
+                        ->where('telegram_id', $user_id)
+                        ->update(['state' => json_encode($userState)]);
+                        
+                    echo "درخواست تنظیم قیمت دلتا کوین دریافت شد\n";
+                } catch (Exception $e) {
+                    echo "خطا در پردازش تنظیم قیمت دلتا کوین: " . $e->getMessage() . "\n";
+                    sendMessage($_ENV['TELEGRAM_TOKEN'], $chat_id, "⚠️ خطا در پردازش درخواست: " . $e->getMessage());
+                }
+            }
+            
+            // تنظیم پورسانت زیرمجموعه
+            else if (strpos($text, 'تنظیم پورسانت') !== false) {
+                try {
+                    require_once __DIR__ . '/application/controllers/AdminController.php';
+                    $adminController = new \application\controllers\AdminController($user_id);
+                    
+                    // بررسی دسترسی ادمین
+                    if (!$adminController->isAdmin() || !$adminController->hasPermission('can_manage_settings')) {
+                        sendMessage($_ENV['TELEGRAM_TOKEN'], $chat_id, "⚠️ شما دسترسی لازم برای این بخش را ندارید.");
+                        continue;
+                    }
+                    
+                    // دریافت پورسانت‌های فعلی
+                    $initial = \Application\Model\DB::table('bot_settings')
+                        ->where('name', 'referral_commission_initial')
+                        ->select('value')
+                        ->first();
+                        
+                    $first_win = \Application\Model\DB::table('bot_settings')
+                        ->where('name', 'referral_commission_first_win')
+                        ->select('value')
+                        ->first();
+                        
+                    $profile_completion = \Application\Model\DB::table('bot_settings')
+                        ->where('name', 'referral_commission_profile_completion')
+                        ->select('value')
+                        ->first();
+                        
+                    $thirty_wins = \Application\Model\DB::table('bot_settings')
+                        ->where('name', 'referral_commission_thirty_wins')
+                        ->select('value')
+                        ->first();
+                        
+                    $initial_value = $initial ? $initial['value'] : '0.5';
+                    $first_win_value = $first_win ? $first_win['value'] : '1.5';
+                    $profile_completion_value = $profile_completion ? $profile_completion['value'] : '3';
+                    $thirty_wins_value = $thirty_wins ? $thirty_wins['value'] : '5';
+                    
+                    $message = "💸 *تنظیم پورسانت زیرمجموعه*\n\n";
+                    $message .= "پورسانت‌های فعلی:\n";
+                    $message .= "• عضویت اولیه: {$initial_value} دلتا کوین\n";
+                    $message .= "• اولین برد: {$first_win_value} دلتا کوین\n";
+                    $message .= "• تکمیل پروفایل: {$profile_completion_value} دلتا کوین\n";
+                    $message .= "• 30 بازی موفق: {$thirty_wins_value} دلتا کوین\n\n";
+                    $message .= "لطفاً نوع پورسانت مورد نظر را انتخاب کنید:";
+                    
+                    // کیبورد پورسانت‌ها
+                    $commission_keyboard = json_encode([
+                        'keyboard' => [
+                            [['text' => '1️⃣ عضویت اولیه']],
+                            [['text' => '2️⃣ اولین برد']],
+                            [['text' => '3️⃣ تکمیل پروفایل']],
+                            [['text' => '4️⃣ 30 بازی موفق']],
+                            [['text' => '🔙 بازگشت به پنل مدیریت']]
+                        ],
+                        'resize_keyboard' => true
+                    ]);
+                    
+                    sendMessageWithKeyboard($_ENV['TELEGRAM_TOKEN'], $chat_id, $message, $commission_keyboard);
+                    
+                    // ذخیره وضعیت ادمین
+                    $userState = [
+                        'state' => 'admin_panel',
+                        'step' => 'commission_menu'
+                    ];
+                    \Application\Model\DB::table('users')
+                        ->where('telegram_id', $user_id)
+                        ->update(['state' => json_encode($userState)]);
+                        
+                    echo "منوی تنظیم پورسانت زیرمجموعه ارسال شد\n";
+                } catch (Exception $e) {
+                    echo "خطا در پردازش تنظیم پورسانت زیرمجموعه: " . $e->getMessage() . "\n";
+                    sendMessage($_ENV['TELEGRAM_TOKEN'], $chat_id, "⚠️ خطا در پردازش درخواست: " . $e->getMessage());
+                }
+            }
+            
+            // روشن/خاموش کردن ربات
+            else if (strpos($text, 'روشن/خاموش ربات') !== false) {
+                try {
+                    require_once __DIR__ . '/application/controllers/AdminController.php';
+                    $adminController = new \application\controllers\AdminController($user_id);
+                    
+                    // بررسی دسترسی ادمین
+                    if (!$adminController->isAdmin() || !$adminController->hasPermission('can_manage_settings')) {
+                        sendMessage($_ENV['TELEGRAM_TOKEN'], $chat_id, "⚠️ شما دسترسی لازم برای این بخش را ندارید.");
+                        continue;
+                    }
+                    
+                    // دریافت وضعیت فعلی ربات
+                    $is_active = \application\controllers\AdminController::isBotActive();
+                    $status_text = $is_active ? "فعال ✅" : "غیرفعال ❌";
+                    
+                    $message = "🔄 *روشن/خاموش کردن ربات*\n\n";
+                    $message .= "وضعیت فعلی ربات: {$status_text}\n\n";
+                    $message .= "اگر ربات را خاموش کنید، بازی‌های در جریان تا انتها ادامه می‌یابند، اما کاربران نمی‌توانند بازی جدیدی را شروع کنند.\n\n";
+                    $message .= "لطفاً وضعیت جدید را انتخاب کنید:";
+                    
+                    // کیبورد وضعیت
+                    $status_keyboard = json_encode([
+                        'keyboard' => [
+                            [['text' => '✅ فعال کردن ربات'], ['text' => '❌ غیرفعال کردن ربات']],
+                            [['text' => '🔙 بازگشت به پنل مدیریت']]
+                        ],
+                        'resize_keyboard' => true
+                    ]);
+                    
+                    sendMessageWithKeyboard($_ENV['TELEGRAM_TOKEN'], $chat_id, $message, $status_keyboard);
+                    
+                    // ذخیره وضعیت ادمین
+                    $userState = [
+                        'state' => 'admin_panel',
+                        'step' => 'bot_status_menu'
+                    ];
+                    \Application\Model\DB::table('users')
+                        ->where('telegram_id', $user_id)
+                        ->update(['state' => json_encode($userState)]);
+                        
+                    echo "منوی روشن/خاموش کردن ربات ارسال شد\n";
+                } catch (Exception $e) {
+                    echo "خطا در پردازش روشن/خاموش کردن ربات: " . $e->getMessage() . "\n";
+                    sendMessage($_ENV['TELEGRAM_TOKEN'], $chat_id, "⚠️ خطا در پردازش درخواست: " . $e->getMessage());
+                }
+            }
+            
+            // لیست برداشت‌ها
+            else if (strpos($text, 'لیست برداشت ها') !== false) {
+                try {
+                    require_once __DIR__ . '/application/controllers/AdminController.php';
+                    $adminController = new \application\controllers\AdminController($user_id);
+                    
+                    // بررسی دسترسی ادمین
+                    if (!$adminController->isAdmin() || !$adminController->hasPermission('can_manage_withdrawals')) {
+                        sendMessage($_ENV['TELEGRAM_TOKEN'], $chat_id, "⚠️ شما دسترسی لازم برای این بخش را ندارید.");
+                        continue;
+                    }
+                    
+                    // دریافت درخواست‌های برداشت
+                    require_once __DIR__ . '/application/controllers/WithdrawalController.php';
+                    $withdrawalController = new \application\controllers\WithdrawalController($user_id);
+                    $pending_requests = $withdrawalController->getWithdrawalRequests('pending', 10);
+                    
+                    if (empty($pending_requests)) {
+                        $message = "📝 *لیست برداشت‌ها*\n\n";
+                        $message .= "هیچ درخواست برداشت در انتظار تأیید وجود ندارد.";
+                        
+                        sendMessage($_ENV['TELEGRAM_TOKEN'], $chat_id, $message);
+                        echo "لیست برداشت‌های خالی ارسال شد\n";
+                        continue;
+                    }
+                    
+                    $message = "📝 *لیست برداشت‌های در انتظار تأیید*\n\n";
+                    $message .= "لطفاً یکی از درخواست‌های زیر را برای مدیریت انتخاب کنید:";
+                    
+                    // ساخت دکمه‌های اینلاین برای هر درخواست
+                    $inline_keyboard = [];
+                    foreach ($pending_requests as $request) {
+                        // دریافت اطلاعات کاربر
+                        $user = \Application\Model\DB::table('users')
+                            ->where('id', $request['user_id'])
+                            ->select('username')
+                            ->first();
+                            
+                        $username = $user ? $user['username'] : '?';
+                        
+                        // محاسبه مبلغ به تومان
+                        $delta_coin_price = $withdrawalController->getDeltaCoinPrice();
+                        $amount_toman = $request['amount'] * $delta_coin_price;
+                        
+                        // تعیین نوع برداشت
+                        $type_text = $request['type'] === 'bank' ? '🏦' : '💎';
+                        
+                        // اضافه کردن دکمه
+                        $inline_keyboard[] = [
+                            ['text' => "{$type_text} {$username} - {$request['amount']} دلتا کوین ({$amount_toman} تومان)", 'callback_data' => "withdrawal:{$request['id']}"]
+                        ];
+                    }
+                    
+                    // اضافه کردن دکمه بازگشت
+                    $inline_keyboard[] = [
+                        ['text' => '🔙 بازگشت به پنل مدیریت', 'callback_data' => 'admin_panel']
+                    ];
+                    
+                    $keyboard = json_encode([
+                        'inline_keyboard' => $inline_keyboard
+                    ]);
+                    
+                    sendMessageWithKeyboard($_ENV['TELEGRAM_TOKEN'], $chat_id, $message, $keyboard);
+                    echo "لیست برداشت‌ها ارسال شد\n";
+                } catch (Exception $e) {
+                    echo "خطا در پردازش لیست برداشت‌ها: " . $e->getMessage() . "\n";
+                    sendMessage($_ENV['TELEGRAM_TOKEN'], $chat_id, "⚠️ خطا در پردازش درخواست: " . $e->getMessage());
+                }
+            }
+            
+            // بازگشت به پنل مدیریت
+            else if (strpos($text, 'بازگشت به پنل مدیریت') !== false) {
+                try {
+                    require_once __DIR__ . '/application/controllers/AdminController.php';
+                    $adminController = new \application\controllers\AdminController($user_id);
+                    
+                    // بررسی دسترسی ادمین
+                    if (!$adminController->isAdmin()) {
+                        sendMessage($_ENV['TELEGRAM_TOKEN'], $chat_id, "⚠️ شما دسترسی لازم برای این بخش را ندارید.");
+                        continue;
+                    }
+                    
+                    // منوی پنل مدیریت
+                    $admin_menu = "🛠️ *پنل مدیریت*\n\n";
+                    $admin_menu .= "به پنل مدیریت ربات خوش آمدید. لطفاً یکی از گزینه‌های زیر را انتخاب کنید:";
+                    
+                    // کیبورد مدیریت
+                    $admin_keyboard = json_encode([
+                        'keyboard' => [
+                            [['text' => '📊 آمار ربات']],
+                            [['text' => '📨 پیام همگانی'], ['text' => '📤 فوروارد همگانی']],
+                            [['text' => '👥 مدیریت ادمین‌ها'], ['text' => '👤 مدیریت کاربران']],
+                            [['text' => '🔗 قفل گروه/کانال'], ['text' => '🔒 قفل آیدی']],
+                            [['text' => '⚙️ تنظیمات ربات'], ['text' => '📱 وضعیت سرور']],
+                            [['text' => '💰 تنظیم قیمت دلتا'], ['text' => '💸 تنظیم پورسانت']],
+                            [['text' => '🔄 روشن/خاموش ربات'], ['text' => '📝 لیست برداشت ها']],
+                            [['text' => '🔙 بازگشت به منوی اصلی']]
+                        ],
+                        'resize_keyboard' => true
+                    ]);
+                    
+                    sendMessageWithKeyboard($_ENV['TELEGRAM_TOKEN'], $chat_id, $admin_menu, $admin_keyboard);
+                    
+                    // ذخیره وضعیت ادمین
+                    $userState = [
+                        'state' => 'admin_panel',
+                        'step' => 'main_menu'
+                    ];
+                    \Application\Model\DB::table('users')
+                        ->where('telegram_id', $user_id)
+                        ->update(['state' => json_encode($userState)]);
+                        
+                    echo "بازگشت به منوی پنل مدیریت\n";
+                } catch (Exception $e) {
+                    echo "خطا در بازگشت به پنل مدیریت: " . $e->getMessage() . "\n";
                     sendMessage($_ENV['TELEGRAM_TOKEN'], $chat_id, "⚠️ خطا در پردازش درخواست: " . $e->getMessage());
                 }
             }
