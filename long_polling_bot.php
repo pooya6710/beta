@@ -207,7 +207,7 @@ function processUpdate($update) {
     }
 
     if (isset($update->message)) {
-        include(__DIR__ . '/handler/handle_message.php');
+        include(__DIR__ . '/handle_message_fixed.php');
     } elseif (isset($update->inline_query)) {
         include(__DIR__ . '/handler/handle_inline_query.php');
     } elseif (isset($update->callback_query)) {
