@@ -6,6 +6,21 @@ global $locale;
 global $user;
 global $helper;
 $text = $telegram->get()->message->text;
+
+// دیباگ: نمایش متن دریافتی از تلگرام
+echo "متن دریافتی از تلگرام: [$text]\n";
+// دیباگ: نمایش کد هگز متن دریافتی
+echo "کد هگز متن دریافتی: " . bin2hex($text) . "\n";
+
+// دیباگ: نمایش متن دکمه اول
+$button_text = $locale->trans('keyboard.home.play_with_unknown');
+echo "متن دکمه 'بازی با ناشناس': [$button_text]\n";
+echo "کد هگز دکمه: " . bin2hex($button_text) . "\n";
+
+// بررسی مقایسه
+echo "مقایسه عادی: " . ($text == $button_text ? "یکسان" : "متفاوت") . "\n";
+echo "مقایسه تریم شده: " . (trim($text) == trim($button_text) ? "یکسان" : "متفاوت") . "\n";
+echo "strpos: " . (strpos($text, "بازی با ناشناس") !== false ? "پیدا شد" : "پیدا نشد") . "\n";
 $from_id = $telegram->get()->message->from->id;
 $first_name = $telegram->get()->message->from->first_name;
 
