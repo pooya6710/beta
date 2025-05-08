@@ -23,7 +23,7 @@ try {
     echo "اتصال به پایگاه داده با موفقیت انجام شد\n";
     
     // بررسی وجود کاربر
-    $telegram_id = 198623746; // از لاگ‌های قبلی
+    $telegram_id = 198623768; // آیدی شما
     $stmt = $pdo->prepare("SELECT * FROM users WHERE telegram_id = :telegram_id");
     $stmt->execute(['telegram_id' => $telegram_id]);
     $user = $stmt->fetch();
