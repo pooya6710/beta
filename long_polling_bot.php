@@ -101,8 +101,20 @@ function processUpdate($update) {
     // چاپ اطلاعات بیشتر برای دیباگ
     if (isset($update->message->text)) {
         echo "پیام دریافتی: {$update->message->text}\n";
-        echo "ترجمه 'keyboard.home.play_with_unknown': " . $locale->trans('keyboard.home.play_with_unknown') . "\n";
-        echo "مقایسه: " . ($update->message->text == $locale->trans('keyboard.home.play_with_unknown') ? "مساوی است" : "مساوی نیست") . "\n";
+        
+        // چاپ اطلاعات بیشتر برای دیباگ
+        if ($update->message->text != '/start') {
+            echo "متن دریافتی از تلگرام: [{$update->message->text}]\n";
+            echo "کد هگز متن دریافتی: " . bin2hex($update->message->text) . "\n";
+            
+            $btn_text = $locale->trans('keyboard.home.play_with_unknown');
+            echo "متن دکمه 'بازی با ناشناس': [{$btn_text}]\n";
+            echo "کد هگز دکمه: " . bin2hex($btn_text) . "\n";
+            
+            echo "مقایسه عادی: " . ($update->message->text == $btn_text ? "یکسان" : "متفاوت") . "\n";
+            echo "مقایسه تریم شده: " . (trim($update->message->text) == trim($btn_text) ? "یکسان" : "متفاوت") . "\n";
+            echo "strpos: " . (strpos($update->message->text, "بازی با ناشناس") !== false ? "پیدا شد" : "پیدا نشد") . "\n";
+        }
     }
     
     $first_name = isset($update->message->from->first_name) ? $update->message->from->first_name : 'کاربر';

@@ -334,6 +334,29 @@ class TelegramClass extends HelperController
         $this->parameters['inline_message_id'] = $inline_message_id;
         $this->parameters['text'] = $text;
         return $this;
-
+    }
+    
+    // متد کمکی برای تشخیص متن کلید با عبارات کلیدی
+    public function matchesKeyword($text, $keywords) 
+    {
+        if (empty($text)) return false;
+        
+        $text = trim($text);
+        
+        // اگر آرایه کلیدواژه‌ها نباشد، به آرایه تبدیل می‌کنیم
+        if (!is_array($keywords)) {
+            $keywords = [$keywords];
+        }
+        
+        foreach ($keywords as $keyword) {
+            $keyword = trim($keyword);
+            // مقایسه دقیق
+            if ($text === $keyword) return true;
+            
+            // بررسی شامل بودن با پشتیبانی از متن فارسی
+            if (mb_stripos($text, $keyword, 0, 'UTF-8') !== false) return true;
+        }
+        
+        return false;
     }
 }

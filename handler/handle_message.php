@@ -79,9 +79,11 @@ $translatedText = trim($locale->trans('keyboard.home.play_with_unknown'));
 $receivedText = trim($text);
 echo "مقایسه بعد از trim: " . ($receivedText == $translatedText ? "مساوی است" : "مساوی نیست") . "\n";
 
-// بررسی اگر متن شامل "بازی با ناشناس" است
-if (trim($text) == trim($locale->trans('keyboard.home.play_with_unknown')) || 
-    strpos($text, 'بازی با ناشناس') !== false){
+// بررسی اگر متن دکمه 'بازی با ناشناس' است
+if ($text == '/start') {
+    $telegram->sendMessage("%message.start[firstname:$first_name]%")->keyboard('main.home')->replay()->send();
+    exit();
+} elseif (str_contains($text, 'بازی با ناشناس') || trim($text) == trim($locale->trans('keyboard.home.play_with_unknown'))) {
     if ($user->userData()['is_firstMatch']){
         $telegram->sendMessage("%message.firstMatch_unknown%")->send();
         DB::table('users')->where('telegram_id',  $telegram->from_id)->update(['is_firstMatch'=>0]);
@@ -122,17 +124,16 @@ if (trim($text) == trim($locale->trans('keyboard.home.play_with_unknown')) ||
     }
     exit();
 }
-elseif (trim($text) == trim($locale->trans('keyboard.home.tournament'))){
+elseif (mb_stripos($text, 'مسابقه', 0, 'UTF-8') !== false || mb_stripos($text, 'تورنومنت', 0, 'UTF-8') !== false || $telegram->matchesKeyword($text, $locale->trans('keyboard.home.tournament'))) {
     $telegram->sendMessage('cooming soon ...')->send();
     exit();
 }
-elseif (trim($text) == trim($locale->trans('keyboard.home.friend')) || 
-       strpos($text, 'دوستان') !== false){
+elseif (mb_stripos($text, 'دوستان', 0, 'UTF-8') !== false || $telegram->matchesKeyword($text, $locale->trans('keyboard.home.friend'))) {
     $telegram->sendMessage('%message.choose%')->keyboard(array_merge($keyboard->get('main.friend') , $keyboard->get('main.decline')))->send();
     exit();
 }
-elseif (trim($text) == trim($locale->trans('keyboard.home.account')) || 
-       strpos($text, 'حساب کاربری') !== false){
+elseif ($telegram->matchesKeyword($text, $locale->trans('keyboard.home.account')) || 
+       mb_stripos($text, 'حساب کاربری', 0, 'UTF-8') !== false){
 
     $userData = $user->userData();
 
@@ -163,8 +164,8 @@ elseif (trim($text) == trim($locale->trans('keyboard.home.account')) ||
     ]))->send();
     exit();
 }
-elseif (trim($text) == trim($locale->trans('keyboard.home.leaderboard')) || 
-       strpos($text, 'نفرات برتر') !== false){
+elseif ($telegram->matchesKeyword($text, $locale->trans('keyboard.home.leaderboard')) || 
+       mb_stripos($text, 'نفرات برتر', 0, 'UTF-8') !== false){
     $telegram->sendMessage('%message.select_category%')->keyboard('main.leaderboard')->send();
     exit();
 }
