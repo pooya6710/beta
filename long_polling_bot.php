@@ -2304,17 +2304,18 @@ function generatePlayerTimer($last_action_time) {
  */
 function getActiveMatchForUser($user_id) {
     try {
-        // جستجوی بازی فعال که کاربر در آن حضور دارد
-        $match = \Application\Model\DB::table('matches')
-            ->where(function($q) use ($user_id) {
-                $q->where('player1', $user_id);
-                $q->orWhere('player2', $user_id);
-            })
-            ->where('status', 'active')
-            ->get();
+        // استفاده از متد rawQuery
+        $results = \Application\Model\DB::rawQuery(
+            "SELECT * FROM matches WHERE (player1 = ? OR player2 = ?) AND status = 'active' LIMIT 1", 
+            [$user_id, $user_id]
+        );
         
-        // بازگرداندن اولین نتیجه اگر وجود داشته باشد
-        return $match->first();
+        // بررسی وجود نتیجه
+        if (count($results) > 0) {
+            return $results[0];
+        }
+        
+        return null;
     } catch (Exception $e) {
         echo "خطا در یافتن بازی فعال: " . $e->getMessage() . "\n";
         return null;
