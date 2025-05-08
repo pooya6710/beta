@@ -1033,7 +1033,7 @@ while (true) {
             $username = isset($update['message']['from']['username']) ? 
                         $update['message']['from']['username'] : 'بدون نام کاربری';
             
-            echo "پیام از {$username}: {$text}\n";
+            echo "پیام از {$username}: {$text} - Telegram ID: {$user_id}\n";
             
             // بررسی وضعیت کاربر برای تغییر نام کاربری و سایر حالت‌های ویژه
             try {
