@@ -1684,7 +1684,7 @@ while (true) {
                             case 'name':
                                 if (strlen($text) > 30) {
                                     sendMessage($_ENV['TELEGRAM_TOKEN'], $chat_id, "❌ نام شما نباید بیشتر از 30 کاراکتر باشد. لطفاً دوباره تلاش کنید.");
-                                    continue;
+                                    continue 2;
                                 }
                                 
                                 // ذخیره نام در پروفایل کاربر
@@ -1726,7 +1726,7 @@ while (true) {
                                     $gender = 'female';
                                 } else {
                                     sendMessage($_ENV['TELEGRAM_TOKEN'], $chat_id, "❌ لطفاً یکی از گزینه‌های موجود را انتخاب کنید.");
-                                    continue;
+                                    continue 2;
                                 }
                                 
                                 // ذخیره جنسیت در پروفایل کاربر
@@ -1765,7 +1765,7 @@ while (true) {
                                 $age = intval($text);
                                 if ($age < 9 || $age > 70) {
                                     sendMessage($_ENV['TELEGRAM_TOKEN'], $chat_id, "❌ لطفاً سن خود را بین 9 تا 70 سال انتخاب کنید.");
-                                    continue;
+                                    continue 2;
                                 }
                                 
                                 // ذخیره سن در پروفایل کاربر
@@ -1812,7 +1812,7 @@ while (true) {
                                 // بررسی معتبر بودن استان انتخاب شده
                                 if (!in_array($text, $provinces) && $text !== 'ترجیح میدهم نگویم') {
                                     sendMessage($_ENV['TELEGRAM_TOKEN'], $chat_id, "❌ لطفاً یکی از استان‌های موجود در لیست را انتخاب کنید.");
-                                    continue;
+                                    continue 2;
                                 }
                                 
                                 // ذخیره استان در پروفایل کاربر
@@ -1901,7 +1901,7 @@ while (true) {
                             case 'bio':
                                 if (strlen($text) > 200) {
                                     sendMessage($_ENV['TELEGRAM_TOKEN'], $chat_id, "❌ بیوگرافی شما نباید بیشتر از 200 کاراکتر باشد. لطفاً دوباره تلاش کنید.");
-                                    continue;
+                                    continue 2;
                                 }
                                 
                                 // ذخیره بیوگرافی در پروفایل کاربر
