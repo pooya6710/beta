@@ -18,7 +18,7 @@ args = "PHP Server"
 
 [[workflows.workflow.tasks]]
 task = "workflow.run"
-args = "Telegram Bot"
+args = "Main Telegram Bot"
 
 [[workflows.workflow]]
 name = "PHP Server"
@@ -30,12 +30,12 @@ args = "php -S 0.0.0.0:5000"
 waitForPort = 5000
 
 [[workflows.workflow]]
-name = "Telegram Bot"
+name = "Main Telegram Bot"
 author = "agent"
 
 [[workflows.workflow.tasks]]
 task = "shell.exec"
-args = "php bot.php"
+args = "php long_polling_bot.php"
 
 [deployment]
 run = ["sh", "-c", "php -S 0.0.0.0:5000"]

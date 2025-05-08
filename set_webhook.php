@@ -10,17 +10,29 @@ $dotenv->safeLoad();
 // تنظیم URL وب‌هوک با استفاده از دامنه Replit
 $webhookUrl = "https://workspace.bejep92474.repl.co/index.php";
 
-// همچنین می‌توانید از آدرس جایگزین استفاده کنید (در صورت نیاز)
-// $webhookUrl = "YOUR_CUSTOM_DOMAIN/index.php";
+// تنظیم پارامترهای اضافی وب‌هوک (فقط پیام‌ها و پست‌های کانال را دریافت کن)
+$allowedUpdates = json_encode(["message", "callback_query", "inline_query"]);
 
 // توکن ربات تلگرام
 $token = $_ENV['TELEGRAM_TOKEN'];
 
-// لینک تنظیم وب‌هوک
-$apiUrl = "https://api.telegram.org/bot{$token}/setWebhook?url={$webhookUrl}";
+// لینک تنظیم وب‌هوک با پارامترهای اضافی
+$apiUrl = "https://api.telegram.org/bot{$token}/setWebhook";
 
-// ارسال درخواست به API تلگرام
-$response = file_get_contents($apiUrl);
+// پارامترهای مورد نیاز برای تنظیم وب‌هوک
+$params = [
+    'url' => $webhookUrl,
+    'allowed_updates' => $allowedUpdates
+];
+
+// تنظیمات cURL
+$ch = curl_init($apiUrl);
+curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+curl_setopt($ch, CURLOPT_POSTFIELDS, $params);
+
+// دریافت پاسخ
+$response = curl_exec($ch);
+curl_close($ch);
 
 // نمایش نتیجه
 echo "<h1>نتیجه تنظیم وب‌هوک:</h1>";
