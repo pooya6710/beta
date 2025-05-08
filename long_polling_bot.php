@@ -208,28 +208,23 @@ while (true) {
                         editMessageText($_ENV['TELEGRAM_TOKEN'], $chat_id, $message_id, $new_text);
                     } 
                     else if ($action === 'end') {
-                        // پایان چت و برگشت به منوی اصلی
-                        $message = "بسیار خب. بازی شما به اتمام رسید چه کاری میتونم برات انجام بدم؟";
+                        // درخواست تأیید برای قطع چت
+                        $confirm_message = "آیا مطمئنید میخواهید قابلیت چت را غیرفعال کنید؟\nبا این اقدام دیگر در این بازی پیامی ارسال یا دریافت نخواهد شد!";
                         
-                        // ارسال منوی اصلی به هر دو بازیکن
-                        $keyboard = json_encode([
-                            'keyboard' => [
-                                [['text' => '👀 بازی با ناشناس'], ['text' => '🏆شرکت در مسابقه 8 نفره + جایزه🎁']],
-                                [['text' => '👥 دوستان'], ['text' => '💸 کسب درآمد 💸']],
-                                [['text' => '👤 حساب کاربری'], ['text' => '🏆نفرات برتر•']],
-                                [['text' => '• پشتیبانی👨‍💻'], ['text' => '⁉️راهنما •']]
-                            ],
-                            'resize_keyboard' => true
+                        $confirm_keyboard = json_encode([
+                            'inline_keyboard' => [
+                                [
+                                    ['text' => 'غیرفعال شود', 'callback_data' => "confirm_end_chat:{$match_id}:yes"],
+                                    ['text' => 'فعال بماند', 'callback_data' => "confirm_end_chat:{$match_id}:no"]
+                                ]
+                            ]
                         ]);
                         
-                        sendMessageWithKeyboard($_ENV['TELEGRAM_TOKEN'], $match['player1'], $message, $keyboard);
-                        sendMessageWithKeyboard($_ENV['TELEGRAM_TOKEN'], $match['player2'], $message, $keyboard);
+                        sendMessageWithKeyboard($_ENV['TELEGRAM_TOKEN'], $chat_id, $confirm_message, $confirm_keyboard);
+                        answerCallbackQuery($_ENV['TELEGRAM_TOKEN'], $callback_query['id'], "درخواست تأیید برای غیرفعال کردن چت ارسال شد.");
                         
-                        answerCallbackQuery($_ENV['TELEGRAM_TOKEN'], $callback_query['id'], "✅ چت پایان یافت و به منوی اصلی بازگشتید.");
-                        echo "چت برای بازی {$match_id} پایان یافت\n";
-                        
-                        // ویرایش پیام نظرسنجی برای جلوگیری از انتخاب مجدد
-                        $new_text = "چت پایان یافت. ✅";
+                        // ویرایش پیام نظرسنجی قبلی
+                        $new_text = "در انتظار تأیید برای قطع چت...";
                         editMessageText($_ENV['TELEGRAM_TOKEN'], $chat_id, $message_id, $new_text);
                     }
                     
@@ -277,6 +272,227 @@ while (true) {
                 }
             }
             
+            // درخواست فعال‌سازی مجدد چت بعد از غیرفعال شدن
+            else if (strpos($callback_data, 'request_chat:') === 0) {
+                try {
+                    $match_id = substr($callback_data, strlen('request_chat:'));
+                    
+                    // دریافت اطلاعات بازی
+                    $match = \Application\Model\DB::table('matches')->where('id', $match_id)->first();
+                    if (!$match) {
+                        answerCallbackQuery($_ENV['TELEGRAM_TOKEN'], $callback_query['id'], "⚠️ خطا: بازی مورد نظر یافت نشد!");
+                        echo "خطا: بازی {$match_id} در دیتابیس یافت نشد\n";
+                        continue;
+                    }
+                    
+                    // بررسی اینکه آیا قبلاً درخواست فعال کردن چت داده شده است
+                    try {
+                        $has_pending_request = \Application\Model\DB::table('matches')
+                            ->where('id', $match_id)
+                            ->where('chat_request_pending', true)
+                            ->exists();
+                            
+                        if ($has_pending_request) {
+                            answerCallbackQuery($_ENV['TELEGRAM_TOKEN'], $callback_query['id'], "درخواست چت قبلا ارسال شده منتظر پاسخ باشید");
+                            echo "خطا: درخواست فعال‌سازی چت قبلاً ارسال شده است\n";
+                            continue;
+                        }
+                    } catch (Exception $e) {
+                        // اگر ستون وجود نداشت، نادیده بگیر
+                        echo "خطا در بررسی وضعیت درخواست چت: " . $e->getMessage() . "\n";
+                    }
+                    
+                    // تعیین کاربر درخواست کننده و حریف
+                    $requester_id = $user_id;
+                    $opponent_id = ($match['player1'] == $requester_id) ? $match['player2'] : $match['player1'];
+                    
+                    if (!$opponent_id) {
+                        answerCallbackQuery($_ENV['TELEGRAM_TOKEN'], $callback_query['id'], "⚠️ خطا: اطلاعات حریف کامل نیست!");
+                        echo "خطا: اطلاعات حریف در بازی {$match_id} کامل نیست\n";
+                        continue;
+                    }
+                    
+                    // ثبت درخواست در دیتابیس
+                    try {
+                        \Application\Model\DB::table('matches')
+                            ->where('id', $match_id)
+                            ->update(['chat_request_pending' => true]);
+                    } catch (Exception $e) {
+                        // اگر ستون وجود نداشت، نادیده بگیر
+                        echo "خطا در به‌روزرسانی وضعیت درخواست چت: " . $e->getMessage() . "\n";
+                    }
+                    
+                    // اطلاع به درخواست کننده
+                    $requester_message = "درخواست فعال شدن چت برای حریف ارسال شد منتظر پاسخ باشید";
+                    sendMessage($_ENV['TELEGRAM_TOKEN'], $requester_id, $requester_message);
+                    
+                    // ارسال درخواست به حریف
+                    $opponent_message = "حریف از شما درخواست فعال کردن چت را دارد\nبا قبول این درخواست شما میتوانید به یکدیگر پیام ارسال کنید!";
+                    $opponent_keyboard = json_encode([
+                        'inline_keyboard' => [
+                            [
+                                ['text' => 'فعال شود', 'callback_data' => "chat_response:{$match_id}:accept"],
+                                ['text' => 'غیرفعال بماند', 'callback_data' => "chat_response:{$match_id}:reject"]
+                            ]
+                        ]
+                    ]);
+                    
+                    sendMessageWithKeyboard($_ENV['TELEGRAM_TOKEN'], $opponent_id, $opponent_message, $opponent_keyboard);
+                    
+                    answerCallbackQuery($_ENV['TELEGRAM_TOKEN'], $callback_query['id'], "✅ درخواست فعال‌سازی چت ارسال شد.");
+                    echo "درخواست فعال‌سازی چت از کاربر {$requester_id} به کاربر {$opponent_id} ارسال شد\n";
+                    
+                } catch (Exception $e) {
+                    echo "خطا در پردازش درخواست فعال‌سازی چت: " . $e->getMessage() . "\n";
+                    answerCallbackQuery($_ENV['TELEGRAM_TOKEN'], $callback_query['id'], "⚠️ خطا در پردازش درخواست: " . $e->getMessage());
+                }
+            }
+            
+            // پاسخ به درخواست فعال‌سازی چت
+            else if (strpos($callback_data, 'chat_response:') === 0) {
+                try {
+                    $parts = explode(':', $callback_data);
+                    $match_id = $parts[1];
+                    $response = $parts[2]; // accept یا reject
+                    
+                    // دریافت اطلاعات بازی
+                    $match = \Application\Model\DB::table('matches')->where('id', $match_id)->first();
+                    if (!$match) {
+                        answerCallbackQuery($_ENV['TELEGRAM_TOKEN'], $callback_query['id'], "⚠️ خطا: بازی مورد نظر یافت نشد!");
+                        echo "خطا: بازی {$match_id} در دیتابیس یافت نشد\n";
+                        continue;
+                    }
+                    
+                    // تعیین کاربر پاسخ دهنده و درخواست کننده
+                    $responder_id = $user_id;
+                    $requester_id = ($match['player1'] == $responder_id) ? $match['player2'] : $match['player1'];
+                    
+                    if ($response === 'accept') {
+                        // فعال کردن چت
+                        try {
+                            \Application\Model\DB::table('matches')
+                                ->where('id', $match_id)
+                                ->update([
+                                    'chat_enabled' => true,
+                                    'chat_request_pending' => false
+                                ]);
+                        } catch (Exception $e) {
+                            // اگر ستون وجود نداشت، نادیده بگیر
+                            echo "خطا در به‌روزرسانی وضعیت چت: " . $e->getMessage() . "\n";
+                        }
+                        
+                        // اعلام به هر دو کاربر
+                        $notification = "✅ قابلیت چت فعال شد. اکنون می‌توانید با حریف خود چت کنید.";
+                        sendMessage($_ENV['TELEGRAM_TOKEN'], $requester_id, $notification);
+                        sendMessage($_ENV['TELEGRAM_TOKEN'], $responder_id, $notification);
+                        
+                        answerCallbackQuery($_ENV['TELEGRAM_TOKEN'], $callback_query['id'], "✅ قابلیت چت فعال شد.");
+                        echo "چت برای بازی {$match_id} فعال شد\n";
+                    }
+                    else if ($response === 'reject') {
+                        // رد کردن درخواست
+                        try {
+                            \Application\Model\DB::table('matches')
+                                ->where('id', $match_id)
+                                ->update(['chat_request_pending' => false]);
+                        } catch (Exception $e) {
+                            // اگر ستون وجود نداشت، نادیده بگیر
+                            echo "خطا در به‌روزرسانی وضعیت درخواست چت: " . $e->getMessage() . "\n";
+                        }
+                        
+                        // اعلام به هر دو کاربر
+                        sendMessage($_ENV['TELEGRAM_TOKEN'], $requester_id, "❌ درخواست فعال کردن چت رد شد.");
+                        sendMessage($_ENV['TELEGRAM_TOKEN'], $responder_id, "❌ شما درخواست فعال کردن چت را رد کردید.");
+                        
+                        answerCallbackQuery($_ENV['TELEGRAM_TOKEN'], $callback_query['id'], "❌ درخواست فعال کردن چت رد شد.");
+                        echo "درخواست فعال‌سازی چت برای بازی {$match_id} رد شد\n";
+                    }
+                    
+                } catch (Exception $e) {
+                    echo "خطا در پردازش پاسخ به درخواست فعال‌سازی چت: " . $e->getMessage() . "\n";
+                    answerCallbackQuery($_ENV['TELEGRAM_TOKEN'], $callback_query['id'], "⚠️ خطا در پردازش پاسخ: " . $e->getMessage());
+                }
+            }
+            
+            // تأیید یا رد درخواست قطع چت
+            else if (strpos($callback_data, 'confirm_end_chat:') === 0) {
+                try {
+                    $parts = explode(':', $callback_data);
+                    $match_id = $parts[1];
+                    $response = $parts[2]; // yes یا no
+                    
+                    // پردازش مستقیم پاسخ
+                    if ($response === 'yes') {
+                        // کاربر تأیید کرده که چت قطع شود
+                        $message = "بسیار خب. بازی شما به اتمام رسید چه کاری میتونم برات انجام بدم؟";
+                        
+                        try {
+                            // به‌روزرسانی وضعیت چت در دیتابیس
+                            \Application\Model\DB::table('matches')
+                                ->where('id', $match_id)
+                                ->update(['chat_enabled' => false]);
+                        } catch (Exception $e) {
+                            // اگر ستون وجود نداشت، نادیده بگیر
+                            echo "خطا در به‌روزرسانی وضعیت چت: " . $e->getMessage() . "\n";
+                        }
+                        
+                        // دریافت اطلاعات بازی
+                        $match = \Application\Model\DB::table('matches')->where('id', $match_id)->first();
+                        if (!$match) {
+                            answerCallbackQuery($_ENV['TELEGRAM_TOKEN'], $callback_query['id'], "⚠️ خطا: بازی مورد نظر یافت نشد!");
+                            echo "خطا: بازی {$match_id} در دیتابیس یافت نشد\n";
+                            continue;
+                        }
+                        
+                        // ارسال منوی اصلی به هر دو بازیکن
+                        $keyboard = json_encode([
+                            'keyboard' => [
+                                [['text' => '👀 بازی با ناشناس'], ['text' => '🏆شرکت در مسابقه 8 نفره + جایزه🎁']],
+                                [['text' => '👥 دوستان'], ['text' => '💸 کسب درآمد 💸']],
+                                [['text' => '👤 حساب کاربری'], ['text' => '🏆نفرات برتر•']],
+                                [['text' => '• پشتیبانی👨‍💻'], ['text' => '⁉️راهنما •']]
+                            ],
+                            'resize_keyboard' => true
+                        ]);
+                        
+                        // ارسال پیام اعلان به هر دو بازیکن
+                        $notification = "قابلیت چت غیرفعال شد. برای فعال کردن مجدد از دکمه زیر استفاده کنید:";
+                        $reactivate_keyboard = json_encode([
+                            'inline_keyboard' => [
+                                [
+                                    ['text' => '🔄 فعال کردن مجدد چت', 'callback_data' => "request_chat:{$match_id}"]
+                                ]
+                            ]
+                        ]);
+                        
+                        sendMessageWithKeyboard($_ENV['TELEGRAM_TOKEN'], $match['player1'], $notification, $reactivate_keyboard);
+                        sendMessageWithKeyboard($_ENV['TELEGRAM_TOKEN'], $match['player2'], $notification, $reactivate_keyboard);
+                        
+                        // ارسال منوی اصلی
+                        sendMessageWithKeyboard($_ENV['TELEGRAM_TOKEN'], $match['player1'], $message, $keyboard);
+                        sendMessageWithKeyboard($_ENV['TELEGRAM_TOKEN'], $match['player2'], $message, $keyboard);
+                        
+                        answerCallbackQuery($_ENV['TELEGRAM_TOKEN'], $callback_query['id'], "✅ چت پایان یافت و به منوی اصلی بازگشتید.");
+                        echo "چت برای بازی {$match_id} پایان یافت\n";
+                        
+                        // ویرایش پیام نظرسنجی
+                        $new_text = "چت پایان یافت. ✅";
+                        editMessageText($_ENV['TELEGRAM_TOKEN'], $chat_id, $message_id, $new_text);
+                    } else {
+                        // کاربر درخواست قطع چت را لغو کرده
+                        answerCallbackQuery($_ENV['TELEGRAM_TOKEN'], $callback_query['id'], "✅ درخواست قطع چت لغو شد.");
+                        
+                        // ویرایش پیام تأیید
+                        $new_text = "درخواست قطع چت لغو شد. چت همچنان فعال است.";
+                        editMessageText($_ENV['TELEGRAM_TOKEN'], $chat_id, $message_id, $new_text);
+                    }
+                    
+                } catch (Exception $e) {
+                    echo "خطا در پردازش تأیید قطع چت: " . $e->getMessage() . "\n";
+                    answerCallbackQuery($_ENV['TELEGRAM_TOKEN'], $callback_query['id'], "⚠️ خطا: " . $e->getMessage());
+                }
+            }
+            
             // در اینجا می‌توان سایر انواع callback_query را پردازش کرد
             
             continue;
@@ -291,6 +507,105 @@ while (true) {
                         $update['message']['from']['username'] : 'بدون نام کاربری';
             
             echo "پیام از {$username}: {$text}\n";
+            
+            // بررسی پیام چت بازی
+            $active_match = getActiveMatchForUser($user_id);
+            if ($active_match && $text[0] !== '/') {
+                // تعیین گیرنده پیام (بازیکن دیگر)
+                $recipient_id = ($active_match['player1'] == $user_id) ? $active_match['player2'] : $active_match['player1'];
+                
+                // بررسی امکان ارسال پیام
+                $chat_enabled = true;
+                try {
+                    // بررسی وضعیت فعال بودن چت
+                    $match_data = \Application\Model\DB::table('matches')
+                        ->where('id', $active_match['id'])
+                        ->select('chat_enabled')
+                        ->first();
+                    
+                    if ($match_data && isset($match_data['chat_enabled']) && $match_data['chat_enabled'] === false) {
+                        $chat_enabled = false;
+                    }
+                } catch (Exception $e) {
+                    // اگر ستون وجود نداشت، فرض کنید چت فعال است
+                    echo "خطا در بررسی وضعیت چت: " . $e->getMessage() . "\n";
+                }
+                
+                if (!$chat_enabled) {
+                    // چت غیرفعال است
+                    $response = "قابلیت چت غیرفعال میباشد پیام شما ارسال نشد!";
+                    sendMessage($_ENV['TELEGRAM_TOKEN'], $user_id, $response);
+                    
+                    // نمایش دکمه درخواست فعال کردن چت
+                    $reactivate_keyboard = json_encode([
+                        'inline_keyboard' => [
+                            [
+                                ['text' => '🔄 فعال کردن مجدد چت', 'callback_data' => "request_chat:{$active_match['id']}"]
+                            ]
+                        ]
+                    ]);
+                    sendMessageWithKeyboard($_ENV['TELEGRAM_TOKEN'], $user_id, "برای درخواست فعال کردن چت از دکمه زیر استفاده کنید:", $reactivate_keyboard);
+                    continue;
+                }
+                
+                // بررسی نوع پیام - فقط متن ساده مجاز است
+                if (isset($update['message']['sticker']) || 
+                    isset($update['message']['animation']) || 
+                    isset($update['message']['photo']) || 
+                    isset($update['message']['video']) || 
+                    isset($update['message']['voice']) || 
+                    isset($update['message']['audio']) || 
+                    isset($update['message']['document'])) {
+                    
+                    $response = "شما تنها مجاز به ارسال پیام بصورت متنی میباشید\nپیام شما ارسال نشد";
+                    sendMessage($_ENV['TELEGRAM_TOKEN'], $user_id, $response);
+                    continue;
+                }
+                
+                // بررسی وجود لینک در پیام
+                if (strpos($text, 'http://') !== false || 
+                    strpos($text, 'https://') !== false || 
+                    strpos($text, 'www.') !== false || 
+                    strpos($text, '.com') !== false || 
+                    strpos($text, '.ir') !== false || 
+                    strpos($text, '.net') !== false || 
+                    strpos($text, '.org') !== false || 
+                    strpos($text, 't.me/') !== false || 
+                    strpos($text, '@') !== false) {
+                    
+                    $response = "ارسال لینک ممنوع میباشد!\nپیام شما ارسال نشد";
+                    sendMessage($_ENV['TELEGRAM_TOKEN'], $user_id, $response);
+                    continue;
+                }
+                
+                // ارسال پیام به بازیکن دیگر
+                $sender_name = isset($update['message']['from']['first_name']) ? $update['message']['from']['first_name'] : 'بازیکن';
+                $forward_text = "👤 {$sender_name}: {$text}";
+                
+                // دکمه‌های واکنش
+                $reaction_keyboard = json_encode([
+                    'inline_keyboard' => [
+                        [
+                            ['text' => '👍', 'callback_data' => "reaction:{$update['message']['message_id']}:like"],
+                            ['text' => '👎', 'callback_data' => "reaction:{$update['message']['message_id']}:dislike"],
+                            ['text' => '❤️', 'callback_data' => "reaction:{$update['message']['message_id']}:love"],
+                            ['text' => '😂', 'callback_data' => "reaction:{$update['message']['message_id']}:laugh"],
+                            ['text' => '😮', 'callback_data' => "reaction:{$update['message']['message_id']}:wow"]
+                        ],
+                        [
+                            ['text' => '😢', 'callback_data' => "reaction:{$update['message']['message_id']}:sad"],
+                            ['text' => '😡', 'callback_data' => "reaction:{$update['message']['message_id']}:angry"],
+                            ['text' => '👏', 'callback_data' => "reaction:{$update['message']['message_id']}:clap"],
+                            ['text' => '🔥', 'callback_data' => "reaction:{$update['message']['message_id']}:fire"],
+                            ['text' => '🎉', 'callback_data' => "reaction:{$update['message']['message_id']}:party"]
+                        ]
+                    ]
+                ]);
+                
+                sendMessageWithKeyboard($_ENV['TELEGRAM_TOKEN'], $recipient_id, $forward_text, $reaction_keyboard);
+                echo "پیام از کاربر {$user_id} به کاربر {$recipient_id} ارسال شد\n";
+                continue;
+            }
             
             // پردازش دستور /cancel
             if ($text === '/cancel') {
@@ -776,5 +1091,29 @@ function generatePlayerTimer($last_action_time) {
     
     // قالب‌بندی متن تایمر
     return sprintf("⏱️ زمان: %02d:%02d", $minutes, $seconds);
+}
+
+/**
+ * یافتن بازی فعال برای کاربر
+ * 
+ * @param int $user_id شناسه کاربر
+ * @return array|null اطلاعات بازی فعال یا null اگر بازی فعالی وجود نداشته باشد
+ */
+function getActiveMatchForUser($user_id) {
+    try {
+        // جستجوی بازی فعال که کاربر در آن حضور دارد
+        $match = \Application\Model\DB::table('matches')
+            ->where(function($query) use ($user_id) {
+                $query->where('player1', $user_id)
+                      ->orWhere('player2', $user_id);
+            })
+            ->where('status', 'active')
+            ->first();
+        
+        return $match;
+    } catch (Exception $e) {
+        echo "خطا در یافتن بازی فعال: " . $e->getMessage() . "\n";
+        return null;
+    }
 }
 ?>
