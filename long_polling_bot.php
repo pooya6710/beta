@@ -1130,10 +1130,11 @@ while (true) {
                         return;
                     }
                     
-                    // دریافت زیرمجموعه‌ها
-                    $referrals = \Application\Model\DB::table('users')
-                        ->where('referrer_id', $userData['id'])
-                        ->get();
+                    // دریافت زیرمجموعه‌ها با استفاده از کوئری خام
+                    $referrals = \Application\Model\DB::rawQuery(
+                        "SELECT * FROM users WHERE referrer_id = ?", 
+                        [$userData['id']]
+                    );
                     
                     if (count($referrals) === 0) {
                         sendMessage($_ENV['TELEGRAM_TOKEN'], $chat_id, "❌ شما هنوز هیچ زیرمجموعه‌ای ندارید.\n\nبرای دعوت از دوستان خود، از بخش کسب درآمد استفاده کنید.");
