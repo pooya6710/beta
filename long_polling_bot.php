@@ -1068,10 +1068,12 @@ while (true) {
                             $new_username = trim($text);
                             
                             // بررسی وجود کاربر دیگر با همین نام کاربری
-                            $existingUser = \Application\Model\DB::table('users')
-                                ->where('username', $new_username)
-                                ->where('id', '!=', $userData['id'])
-                                ->first();
+                            // جایگزین با rawQuery برای استفاده از عملگر !=
+                            $existingUser = \Application\Model\DB::rawQuery(
+                                "SELECT * FROM users WHERE username = ? AND id != ? LIMIT 1", 
+                                [$new_username, $userData['id']]
+                            );
+                            $existingUser = !empty($existingUser) ? $existingUser[0] : null;
                             
                             if ($existingUser) {
                                 sendMessage($_ENV['TELEGRAM_TOKEN'], $chat_id, "⚠️ این نام کاربری قبلاً توسط کاربر دیگری انتخاب شده است. لطفاً نام کاربری دیگری انتخاب کنید.");
@@ -1915,7 +1917,7 @@ while (true) {
                     $delta_coins = isset($userExtra['delta_coins']) ? $userExtra['delta_coins'] : 0;
                     
                     // ارسال پیام درخواست تغییر نام کاربری
-                    $message = "شما میتوانید با 10 دلتاکوین نام کاربری خود را عوض کنید\nچنانچه قصد تغییر آن را دارید، نام کاربری جدیدتان را ارسال کنید\n";
+                    $message = "چنانچه قصد تغییر آن را دارید، نام کاربری جدیدتان را ارسال کنید\n";
                     $message .= "نام کاربری فعلی: /{$userData['username']}\n";
                     
                     if ($delta_coins < 10) {
@@ -1924,7 +1926,16 @@ while (true) {
                         return;
                     }
                     
-                    sendMessage($_ENV['TELEGRAM_TOKEN'], $chat_id, $message);
+                    // ایجاد دکمه لغو
+                    $keyboard = json_encode([
+                        'keyboard' => [
+                            [['text' => 'لغو ❌']]
+                        ],
+                        'resize_keyboard' => true,
+                        'one_time_keyboard' => true
+                    ]);
+                    
+                    sendMessageWithKeyboard($_ENV['TELEGRAM_TOKEN'], $chat_id, $message, $keyboard);
                     
                     // ذخیره وضعیت کاربر در حالت تغییر نام کاربری
                     try {
