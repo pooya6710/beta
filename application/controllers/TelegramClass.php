@@ -19,19 +19,23 @@ class TelegramClass extends HelperController
     public $text;
     public function __construct($update)
     {
-        self::$api_url = 'https://api.telegram.org/bot' . $_ENV['TELEGRAM_TOKEN'] . "/";
+        self::$api_url = 'https://api.telegram.org/bot' . ($_ENV['TELEGRAM_TOKEN'] ?? '') . "/";
         $this->update = $update;
         if ($this->getUserTelegramID($update))
             $this->from_id = $this->getUserTelegramID($update);
         // else will be here
         if (isset($update->message)) {
-            $this->message_id  = $update->message->message_id;
+            $this->message_id = $update->message->message_id ?? null;
+            $this->chat_id = $update->message->chat->id ?? null;
+            $this->text = $update->message->text ?? null;
         }
         elseif (isset($update->callback_query)) {
-            $this->message_id  = $update->callback_query->message->message_id; ;
+            $this->message_id = $update->callback_query->message->message_id ?? null;
+            // اگر chat->id در callback_query->message وجود داشته باشد، آن را تنظیم کنید
+            if (isset($update->callback_query->message) && isset($update->callback_query->message->chat)) {
+                $this->chat_id = $update->callback_query->message->chat->id;
+            }
         }
-        $this->chat_id = $update->message->chat->id;
-        $this->text = $update->message->text;
     }
 
     public static function api($method , $parameters): bool|string
@@ -212,7 +216,6 @@ class TelegramClass extends HelperController
     
     public function send($chat_id = ""): true
     {
-
         if ($this->method == 'sendMessage') {
             if ($chat_id == ""){
                 $this->parameters['chat_id'] = $this->from_id;
@@ -261,8 +264,11 @@ class TelegramClass extends HelperController
     public function answerInlineQuery($cache_time = 0)
     {
         $this->method = 'answerInlineQuery';
-        $this->parameters['inline_query_id'] = $this->get()->inline_query->id;
-        $this->parameters['cache_time'] = $cache_time;
+        if (isset($this->get()->inline_query->id)) {
+            $this->parameters['inline_query_id'] = $this->get()->inline_query->id;
+            $this->parameters['cache_time'] = $cache_time;
+            return $this;
+        }
         return $this;
     }
 
@@ -287,36 +293,39 @@ class TelegramClass extends HelperController
     public function answerCallbackQuery($text , $show_alert = false , $url = "" , $cache_time = 0)
     {
         $this->method = 'answerCallbackQuery';
-        $this->parameters['callback_query_id'] = $this->get()->callback_query->id ;
-        if (str_starts_with($text, '%') && str_ends_with($text, '%')) {
-            $locale = new LocaleController();
-            if (str_contains($text, '[') && str_contains($text, ']')) {
-                preg_match('/\[(.*?)\]/', $text, $matches);
-                if (isset($matches[1])) {
-                    $textInsideBrackets = $matches[1];
-                    $result = [];
-                    $pairs = explode(',', $textInsideBrackets);
-                    foreach ($pairs as $pair) {
-                        list($key, $value) = explode(':', $pair);
-                        $result[$key] = $value;
+        if (isset($this->get()->callback_query->id)) {
+            $this->parameters['callback_query_id'] = $this->get()->callback_query->id;
+            if (str_starts_with($text, '%') && str_ends_with($text, '%')) {
+                $locale = new LocaleController();
+                if (str_contains($text, '[') && str_contains($text, ']')) {
+                    preg_match('/\[(.*?)\]/', $text, $matches);
+                    if (isset($matches[1])) {
+                        $textInsideBrackets = $matches[1];
+                        $result = [];
+                        $pairs = explode(',', $textInsideBrackets);
+                        foreach ($pairs as $pair) {
+                            list($key, $value) = explode(':', $pair);
+                            $result[$key] = $value;
+                        }
+                        $text = str_replace('%', '', $text);
+                        $text = str_replace($matches[0], '', $text);
+                        $text = $locale->trans($text , $result);
                     }
+                } else {
                     $text = str_replace('%', '', $text);
-                    $text = str_replace($matches[0], '', $text);
-                    $text = $locale->trans($text , $result);
+                    $text = $locale->trans($text);
                 }
-            } else {
-                $text = str_replace('%', '', $text);
-                $text = $locale->trans($text);
             }
+            $this->parameters['text'] = $text;
+            $this->parameters['show_alert'] = $show_alert;
+            $this->parameters['url'] = $url;
+            $this->parameters['cache_time'] = $cache_time;
+            $x = self::api($this->method, $this->parameters);
+            $this->method = "";
+            $this->parameters = [] ;
+            return $x;
         }
-        $this->parameters['text'] = $text;
-        $this->parameters['show_alert'] = $show_alert;
-        $this->parameters['url'] = $url;
-        $this->parameters['cache_time'] = $cache_time;
-        $x = self::api($this->method, $this->parameters);
-        $this->method = "";
-        $this->parameters = [] ;
-        return $x;
+        return false;
     }
 
     public function editMessage($inline_message_id , $text)
