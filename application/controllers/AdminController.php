@@ -572,4 +572,50 @@ class AdminController
             
         return $user ? $user['id'] : 0;
     }
+    
+    /**
+     * دریافت لیست ادمین‌ها با سطح دسترسی خاص
+     * @param string $permission نام سطح دسترسی
+     * @return array
+     */
+    public static function getAdminsWithPermission($permission)
+    {
+        try {
+            $admins = [];
+            
+            // اگر دسترسی 'is_owner' باشد، فقط مدیران ارشد را برمی‌گرداند
+            if ($permission === 'is_owner') {
+                $admins = DB::table('users')
+                    ->where('type', 'owner')
+                    ->get();
+                    
+                return $admins;
+            }
+            
+            // دریافت ادمین‌ها با سطح دسترسی مشخص
+            $permissions = DB::table('admin_permissions')
+                ->where($permission, true)
+                ->get();
+                
+            if (empty($permissions)) {
+                return [];
+            }
+            
+            // استخراج شناسه کاربران
+            $userIds = array_map(function($item) {
+                return $item['user_id'];
+            }, $permissions);
+            
+            // دریافت اطلاعات کاربران
+            $admins = DB::table('users')
+                ->whereIn('id', $userIds)
+                ->get();
+                
+            return $admins;
+            
+        } catch (\Exception $e) {
+            error_log("خطا در دریافت لیست ادمین‌ها: " . $e->getMessage());
+            return [];
+        }
+    }
 }
