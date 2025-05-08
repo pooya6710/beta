@@ -281,4 +281,89 @@ class StatisticsController
             ];
         }
     }
+    
+    /**
+     * دریافت گزارش آماری برای پنل ادمین
+     * @return array
+     */
+    public static function getAdminReport()
+    {
+        try {
+            $today = date('Y-m-d');
+            $today_start = $today . ' 00:00:00';
+            $today_end = $today . ' 23:59:59';
+            
+            // تعداد کل کاربران
+            $total_users = DB::table('users')->count();
+            
+            // کاربران فعال امروز
+            $active_users_today = DB::table('users')
+                ->where('last_activity', '>=', $today_start)
+                ->count();
+                
+            // تعداد کل بازی‌ها
+            $total_games = DB::table('matches')->count();
+            
+            // بازی‌های فعال
+            $active_games = DB::table('matches')
+                ->where('status', 'in_progress')
+                ->count();
+                
+            // بازی‌های امروز
+            $games_today = DB::table('matches')
+                ->where('created_at', '>=', $today_start)
+                ->where('created_at', '<=', $today_end)
+                ->count();
+                
+            // میانگین دلتا کوین‌ها
+            $avg_delta_coins = DB::rawQuery("SELECT AVG(delta_coins) as avg_coins FROM users_extra")[0]['avg_coins'] ?? 0;
+            $avg_delta_coins = round($avg_delta_coins, 2);
+            
+            // جمع کل درآمد (مثال)
+            $total_income = DB::rawQuery("SELECT SUM(amount) as total FROM delta_coin_transactions WHERE amount < 0")[0]['total'] ?? 0;
+            $total_income = abs($total_income);
+            
+            // بررسی آیا آمار امروز در دیتابیس موجود است
+            $stats_today = DB::table('admin_statistics')
+                ->where('date', $today)
+                ->first();
+                
+            // استفاده از آمار ذخیره شده در دیتابیس اگر موجود باشد
+            if ($stats_today) {
+                return [
+                    'total_users' => $stats_today['total_users'],
+                    'active_users_today' => $stats_today['active_users'],
+                    'total_games' => $stats_today['total_games'],
+                    'active_games' => $active_games,
+                    'games_today' => $stats_today['games_today'],
+                    'avg_delta_coins' => $stats_today['avg_delta_coins'],
+                    'new_users' => $stats_today['new_users'],
+                    'total_delta_coins' => $stats_today['total_delta_coins'],
+                    'pending_withdrawals' => $stats_today['pending_withdrawals'],
+                    'pending_withdrawals_amount' => $stats_today['pending_withdrawals_amount']
+                ];
+            }
+            
+            // اگر آمار امروز موجود نباشد، اطلاعات پایه را برمی‌گردانیم
+            return [
+                'total_users' => $total_users,
+                'active_users_today' => $active_users_today,
+                'total_games' => $total_games,
+                'active_games' => $active_games,
+                'games_today' => $games_today,
+                'avg_delta_coins' => $avg_delta_coins
+            ];
+            
+        } catch (\Exception $e) {
+            error_log("خطا در دریافت گزارش ادمین: " . $e->getMessage());
+            return [
+                'total_users' => 0,
+                'active_users_today' => 0,
+                'total_games' => 0,
+                'active_games' => 0,
+                'games_today' => 0,
+                'avg_delta_coins' => 0
+            ];
+        }
+    }
 }
