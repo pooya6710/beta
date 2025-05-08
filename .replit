@@ -35,7 +35,7 @@ author = "agent"
 
 [[workflows.workflow.tasks]]
 task = "shell.exec"
-args = "php long_polling_bot.php"
+args = "php fixed_telegram_bot.php"
 
 [deployment]
 run = ["sh", "-c", "php -S 0.0.0.0:5000"]
