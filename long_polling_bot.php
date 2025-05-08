@@ -19,8 +19,13 @@ $dotenv->safeLoad();
 include(__DIR__ . "/system/Loader.php");
 date_default_timezone_set('Asia/Tehran');
 
-// تنظیم آخرین آپدیت دریافت شده
-$lastUpdateId = 0;
+// تنظیم آخرین آپدیت دریافت شده - ذخیره بین اجراها
+$lastUpdateIdFile = __DIR__ . '/last_update_id.txt';
+if (file_exists($lastUpdateIdFile)) {
+    $lastUpdateId = (int)file_get_contents($lastUpdateIdFile);
+} else {
+    $lastUpdateId = 0;
+}
 
 echo "ربات تلگرام اصلی در حال اجرا با روش Long Polling...\n";
 echo "برای توقف، کلید Ctrl+C را فشار دهید.\n\n";
@@ -38,8 +43,9 @@ while (true) {
     
     // پردازش هر آپدیت
     foreach ($updates['result'] as $update) {
-        // به‌روزرسانی آخرین آی‌دی آپدیت
+        // به‌روزرسانی آخرین آی‌دی آپدیت و ذخیره آن در فایل
         $lastUpdateId = $update['update_id'] + 1;
+        file_put_contents($lastUpdateIdFile, $lastUpdateId);
         
         // تبدیل آپدیت به شیء
         $updateObj = json_decode(json_encode($update));

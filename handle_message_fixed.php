@@ -18,6 +18,14 @@ if (!isset($step) || $step === null) {
 $text = $telegram->get()->message->text;
 
 // حذف کدهای دیباگ برای افزایش سرعت
+
+// اضافه کردن پشتیبانی از دستور /cancel برای لغو جستجوی بازیکن
+if ($text == '/cancel') {
+    // پاک کردن همه بازی‌های در انتظار کاربر
+    $deleted = DB::table('matches')->where(['player1' => $telegram->from_id, 'status' => 'pending'])->delete();
+    $telegram->sendMessage("%message.cancel_search%")->keyboard('main.home')->send();
+    exit();
+}
 $button_text = $locale->trans('keyboard.home.play_with_unknown');
 $from_id = $telegram->get()->message->from->id;
 $first_name = $telegram->get()->message->from->first_name;
