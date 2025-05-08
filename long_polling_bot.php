@@ -179,10 +179,16 @@ while (true) {
                     }
                     
                     if ($action === 'extend') {
-                        // افزایش زمان چت به 5 دقیقه
-                        \Application\Model\DB::table('matches')
-                            ->where('id', $match_id)
-                            ->update(['chat_end_time' => date('Y-m-d H:i:s', strtotime('+5 minutes'))]);
+                        // بررسی وجود ستون chat_end_time
+                        try {
+                            // افزایش زمان چت به 5 دقیقه
+                            \Application\Model\DB::table('matches')
+                                ->where('id', $match_id)
+                                ->update(['chat_end_time' => date('Y-m-d H:i:s', strtotime('+5 minutes'))]);
+                        } catch (Exception $e) {
+                            // اگر ستون وجود نداشت، خطا را نادیده بگیر و تنها در لاگ ثبت کن
+                            echo "خطا در به‌روزرسانی chat_end_time: " . $e->getMessage() . "\n";
+                        }
                         
                         // اطلاع‌رسانی به هر دو بازیکن
                         $message = "مقدار زمان چتِ بعد از بازی شما به 5 دقیقه افزایش یافت";
@@ -321,8 +327,8 @@ while (true) {
                         'player1' => $user_id, 
                         'player1_hash' => $helper->Hash(), 
                         'type' => 'anonymous',
-                        'created_at' => date('Y-m-d H:i:s'),
-                        'last_action_time' => date('Y-m-d H:i:s') // زمان آخرین کنش برای محاسبه زمان‌سنج
+                        'created_at' => date('Y-m-d H:i:s')
+                        // ستون last_action_time در دیتابیس وجود ندارد
                     ]);
                     
                     echo "بازی جدید در وضعیت pending ایجاد شد\n";
