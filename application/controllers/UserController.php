@@ -13,7 +13,10 @@ class UserController extends HelperController
             if (!DB::table('users')->where('telegram_id', $this->telegram_id)->select('id')->get()) {
 
                 if ($ref_id){
-                    DB::table('users')->insert(['telegram_id' => $this->telegram_id , 'refere_id' => $ref_id]);
+                    DB::table('users')->insert(['telegram_id' => $this->telegram_id]);
+                    // اضافه کردن رکورد رفرال
+                    $new_user_id = DB::table('users')->where('telegram_id', $this->telegram_id)->select('id')->first()['id'];
+                    DB::table('referrals')->insert(['referrer_id' => $ref_id, 'referee_id' => $new_user_id, 'created_at' => date('Y-m-d H:i:s')]);
                 }else{
                     DB::table('users')->insert(['telegram_id' => $this->telegram_id]);
                 }
