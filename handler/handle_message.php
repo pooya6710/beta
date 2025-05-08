@@ -111,11 +111,13 @@ elseif (trim($text) == trim($locale->trans('keyboard.home.tournament'))){
     $telegram->sendMessage('cooming soon ...')->send();
     exit();
 }
-elseif ($text == $locale->trans('keyboard.home.friend')){
+elseif (trim($text) == trim($locale->trans('keyboard.home.friend')) || 
+       strpos($text, 'دوستان') !== false){
     $telegram->sendMessage('%message.choose%')->keyboard(array_merge($keyboard->get('main.friend') , $keyboard->get('main.decline')))->send();
     exit();
 }
-elseif ($text == $locale->trans('keyboard.home.account')){
+elseif (trim($text) == trim($locale->trans('keyboard.home.account')) || 
+       strpos($text, 'حساب کاربری') !== false){
 
     $userData = $user->userData();
 
@@ -146,7 +148,8 @@ elseif ($text == $locale->trans('keyboard.home.account')){
     ]))->send();
     exit();
 }
-elseif ($text == $locale->trans('keyboard.home.leaderboard')){
+elseif (trim($text) == trim($locale->trans('keyboard.home.leaderboard')) || 
+       strpos($text, 'نفرات برتر') !== false){
     $telegram->sendMessage('%message.select_category%')->keyboard('main.leaderboard')->send();
     exit();
 }
