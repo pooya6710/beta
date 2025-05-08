@@ -55,7 +55,18 @@ if (str_starts_with($text , '/start')){
 //    $telegram->sendMessage('%message.send_game_to_pv%')->inline_keyboard($keyboard->get('main.send_to_pv'))->send();
 //    exit();
 //}
-if ($text == $locale->trans('keyboard.home.play_with_unknown')){
+// چاپ اطلاعات دیباگ
+echo "متن دقیق دریافتی: [$text]\n";
+echo "متن دقیق ترجمه شده برای مقایسه: [" . $locale->trans('keyboard.home.play_with_unknown') . "]\n";
+
+// مقایسه دقیق‌تر با trim برای حذف فضاهای خالی اضافی
+$translatedText = trim($locale->trans('keyboard.home.play_with_unknown'));
+$receivedText = trim($text);
+echo "مقایسه بعد از trim: " . ($receivedText == $translatedText ? "مساوی است" : "مساوی نیست") . "\n";
+
+// بررسی اگر متن شامل "بازی با ناشناس" است
+if (trim($text) == trim($locale->trans('keyboard.home.play_with_unknown')) || 
+    strpos($text, 'بازی با ناشناس') !== false){
     if ($user->userData()['is_firstMatch']){
         $telegram->sendMessage("%message.firstMatch_unknown%")->send();
         DB::table('users')->where('telegram_id',  $telegram->from_id)->update(['is_firstMatch'=>0]);
@@ -96,7 +107,7 @@ if ($text == $locale->trans('keyboard.home.play_with_unknown')){
     }
     exit();
 }
-elseif ($text == $locale->trans('keyboard.home.tournament')){
+elseif (trim($text) == trim($locale->trans('keyboard.home.tournament'))){
     $telegram->sendMessage('cooming soon ...')->send();
     exit();
 }

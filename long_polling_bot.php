@@ -98,6 +98,13 @@ function processUpdate($update) {
     $option = new Option();
     $helper = new Helper();
     
+    // چاپ اطلاعات بیشتر برای دیباگ
+    if (isset($update->message->text)) {
+        echo "پیام دریافتی: {$update->message->text}\n";
+        echo "ترجمه 'keyboard.home.play_with_unknown': " . $locale->trans('keyboard.home.play_with_unknown') . "\n";
+        echo "مقایسه: " . ($update->message->text == $locale->trans('keyboard.home.play_with_unknown') ? "مساوی است" : "مساوی نیست") . "\n";
+    }
+    
     $first_name = isset($update->message->from->first_name) ? $update->message->from->first_name : 'کاربر';
 
     // کد اصلی index.php از اینجا اجرا می‌شود
