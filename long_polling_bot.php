@@ -1055,10 +1055,12 @@ while (true) {
                         return;
                     }
                     
-                    // دریافت وضعیت تکمیل پروفایل
-                    $userProfile = \Application\Model\DB::table('user_profiles')
-                        ->where('user_id', $userData['id'])
-                        ->first();
+                    // دریافت وضعیت تکمیل پروفایل با استفاده از کوئری خام
+                    $profiles = \Application\Model\DB::rawQuery(
+                        "SELECT * FROM user_profiles WHERE user_id = ?", 
+                        [$userData['id']]
+                    );
+                    $userProfile = !empty($profiles) ? $profiles[0] : null;
                     
                     // پیام‌های راهنمای پروفایل
                     $message = "📝 برای تکمیل پروفایل خود، موارد زیر را تکمیل کنید:";
