@@ -91,12 +91,14 @@ function getUpdates($token, $offset = 0) {
  */
 function processUpdate($update) {
     // ایجاد نمونه‌های مورد نیاز که در متغیرهای سراسری گرفته می‌شوند
-    global $telegram, $locale, $keyboard, $option, $helper;
+    global $telegram, $locale, $keyboard, $option, $helper, $user, $step;
     $telegram = new Telegram($update);
     $locale = new Locale();
     $keyboard = new Keyboard();
     $option = new Option();
     $helper = new Helper();
+    $user = new User($update);
+    $step = new Step($update);
     
     // چاپ اطلاعات بیشتر برای دیباگ
     if (isset($update->message->text)) {
@@ -177,7 +179,7 @@ function processUpdate($update) {
     }
 
     // بررسی تنظیم نام کاربری
-    if ($step->get() == 'set_username') {
+    if ($step && method_exists($step, 'get') && $step->get() == 'set_username') {
         if (isset($update->message->text) && preg_match('/^[a-zA-Z][a-zA-Z0-9]{4,11}$/', $update->message->text)) {
             $is_username_exist = DB::table('users')->where('username', $update->message->text)->select('id')->first();
             if ($is_username_exist) {
@@ -194,13 +196,13 @@ function processUpdate($update) {
         }
     }
 
-    if ($user->userData() && isset($user->userData()['username']) && $user->userData()['username'] == NULL) {
+    if ($user && method_exists($user, 'userData') && $user->userData() && isset($user->userData()['username']) && $user->userData()['username'] == NULL) {
         $telegram->sendMessage("%message.set_username[firstname:$first_name]%")->send();
         $step->set('set_username');
         return;
     }
 
-    if ($user->isAdmin()) {
+    if ($user && method_exists($user, 'isAdmin') && $user->isAdmin()) {
         include(__DIR__ . '/handler/handle_admin.php');
     }
 
