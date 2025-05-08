@@ -569,74 +569,90 @@ while (true) {
             $chat_id = $update['message']['chat']['id'];
             $user_id = $update['message']['from']['id'];
             
-            // دریافت اطلاعات کاربر و وضعیت فعلی
             try {
-                $userData = \Application\Model\DB::table('users')->where('telegram_id', $user_id)->select('*')->first();
-                
-                if (!$userData || !isset($userData['state']) || empty($userData['state'])) {
-                    // اگر وضعیتی برای کاربر تعریف نشده، عکس را نادیده می‌گیریم
-                    continue;
-                }
-                
-                $userState = json_decode($userData['state'], true);
-                
-                // اگر کاربر در حال آپلود عکس پروفایل است
-                if ($userState['state'] === 'profile' && $userState['step'] === 'photo') {
-                    // دریافت بهترین کیفیت عکس
-                    $photo = end($update['message']['photo']);
-                    $file_id = $photo['file_id'];
+                // بررسی آیا کاربر در حالت تکمیل پروفایل است
+                $user_state_file = __DIR__ . "/user_states/{$user_id}.json";
+                if (file_exists($user_state_file)) {
+                    $userState = json_decode(file_get_contents($user_state_file), true);
                     
-                    // ذخیره شناسه فایل عکس در پروفایل کاربر
-                    $profileExists = \Application\Model\DB::table('user_profiles')
-                        ->where('user_id', $userData['id'])
-                        ->exists();
-                    
-                    if ($profileExists) {
-                        \Application\Model\DB::table('user_profiles')
+                    // اگر کاربر در مرحله آپلود عکس پروفایل است
+                    if (isset($userState['state']) && $userState['state'] === 'profile_completion' && 
+                        isset($userState['step']) && $userState['step'] === 'waiting_for_photo') {
+                        
+                        // دریافت اطلاعات کاربر از دیتابیس
+                        $userData = \Application\Model\DB::table('users')->where('telegram_id', $user_id)->first();
+                        
+                        if (!$userData) {
+                            sendMessage($_ENV['TELEGRAM_TOKEN'], $chat_id, "⚠️ خطا در دریافت اطلاعات کاربری");
+                            echo "خطا: کاربر در دیتابیس یافت نشد\n";
+                            unlink($user_state_file); // حذف فایل وضعیت
+                            continue;
+                        }
+                        
+                        // دریافت بهترین کیفیت عکس
+                        $photo = end($update['message']['photo']);
+                        $file_id = $photo['file_id'];
+                        
+                        // ذخیره شناسه فایل عکس در پروفایل کاربر
+                        $profileExists = \Application\Model\DB::table('user_profiles')
                             ->where('user_id', $userData['id'])
-                            ->update(['photo_id' => $file_id, 'photo_approved' => false]);
-                    } else {
-                        \Application\Model\DB::table('user_profiles')->insert([
-                            'user_id' => $userData['id'],
-                            'photo_id' => $file_id,
-                            'photo_approved' => false
-                        ]);
-                    }
-                    
-                    // ارسال عکس به کانال ادمین برای تأیید
-                    $admin_channel_id = "-100123456789"; // آیدی کانال ادمین را قرار دهید
-                    try {
-                        $admin_message = "✅ درخواست تأیید عکس پروفایل:\n\nکاربر: {$userData['username']}\nآیدی: {$userData['telegram_id']}";
+                            ->exists();
+                            
+                        if ($profileExists) {
+                            \Application\Model\DB::table('user_profiles')
+                                ->where('user_id', $userData['id'])
+                                ->update(['photo_file_id' => $file_id, 'photo_approved' => false]);
+                        } else {
+                            \Application\Model\DB::table('user_profiles')->insert([
+                                'user_id' => $userData['id'],
+                                'photo_file_id' => $file_id,
+                                'photo_approved' => false
+                            ]);
+                        }
                         
-                        $admin_keyboard = json_encode([
-                            'inline_keyboard' => [
-                                [
-                                    ['text' => '✅ تأیید', 'callback_data' => "approve_photo:{$userData['id']}"],
-                                    ['text' => '❌ رد', 'callback_data' => "reject_photo:{$userData['id']}"]
+                        // ارسال عکس به کانال ادمین برای تأیید
+                        $admin_channel_id = "-100123456789"; // آیدی کانال ادمین را قرار دهید
+                        try {
+                            $admin_message = "✅ درخواست تأیید عکس پروفایل:\n\nکاربر: {$userData['username']}\nآیدی: {$userData['telegram_id']}";
+                            
+                            $admin_keyboard = json_encode([
+                                'inline_keyboard' => [
+                                    [
+                                        ['text' => '✅ تأیید', 'callback_data' => "approve_photo:{$userData['id']}"],
+                                        ['text' => '❌ رد', 'callback_data' => "reject_photo:{$userData['id']}"]
+                                    ]
                                 ]
-                            ]
-                        ]);
+                            ]);
+                            
+                            // تابع ارسال عکس به کانال ادمین
+                            // sendPhoto($_ENV['TELEGRAM_TOKEN'], $admin_channel_id, $file_id, $admin_message, $admin_keyboard);
+                            echo "عکس به کانال ادمین ارسال شد\n";
+                        } catch (Exception $e) {
+                            echo "خطا در ارسال عکس به کانال ادمین: " . $e->getMessage() . "\n";
+                        }
                         
-                        // تابع ارسال عکس به کانال ادمین
-                        // forwardPhoto($_ENV['TELEGRAM_TOKEN'], $chat_id, $admin_channel_id, $file_id, $admin_message, $admin_keyboard);
-                    } catch (Exception $e) {
-                        echo "خطا در ارسال عکس به کانال ادمین: " . $e->getMessage() . "\n";
+                        sendMessage($_ENV['TELEGRAM_TOKEN'], $chat_id, "✅ عکس پروفایل شما با موفقیت ارسال شد و در انتظار تأیید ادمین است.");
+                        
+                        // به روز رسانی وضعیت کاربر به مرحله بعدی
+                        $userState['step'] = 'waiting_for_name';
+                        file_put_contents($user_state_file, json_encode($userState));
+                        
+                        // مرحله بعدی - درخواست نام
+                        $message = "📝 *تکمیل پروفایل*\n\n";
+                        $message .= "مرحله 2/7: لطفاً نام کامل خود را وارد کنید.";
+                        
+                        // ایجاد دکمه لغو
+                        $cancel_keyboard = [
+                            'keyboard' => [
+                                [
+                                    ['text' => 'لغو ❌']
+                                ]
+                            ],
+                            'resize_keyboard' => true
+                        ];
+                        
+                        sendMessageWithKeyboard($_ENV['TELEGRAM_TOKEN'], $chat_id, $message, json_encode($cancel_keyboard));
                     }
-                    
-                    sendMessage($_ENV['TELEGRAM_TOKEN'], $chat_id, "✅ عکس پروفایل شما با موفقیت ارسال شد و در انتظار تأیید ادمین است.");
-                    
-                    // بازگشت به منوی پروفایل
-                    $userState = [
-                        'state' => 'profile',
-                        'step' => 'menu'
-                    ];
-                    \Application\Model\DB::table('users')
-                        ->where('id', $userData['id'])
-                        ->update(['state' => json_encode($userState)]);
-                    
-                    // فراخوانی مجدد منوی پروفایل
-                    $text = "📝 پروفایل";
-                    $update['message']['text'] = $text;
                 }
                 
             } catch (Exception $e) {
@@ -785,7 +801,7 @@ while (true) {
             
             // بررسی وضعیت کاربر برای تغییر نام کاربری و سایر حالت‌های ویژه
             try {
-                // بررسی آیا کاربر در حالت تغییر نام کاربری است
+                // بررسی آیا کاربر در حالتی خاص است
                 $user_state_file = __DIR__ . "/user_states/{$user_id}.json";
                 if (file_exists($user_state_file)) {
                     $userState = json_decode(file_get_contents($user_state_file), true);
@@ -844,6 +860,246 @@ while (true) {
                             $userState['new_username'] = $new_username;
                             file_put_contents($user_state_file, json_encode($userState));
                             
+                            continue;
+                        }
+                    }
+                    // پردازش حالت تکمیل پروفایل
+                    else if (isset($userState['state']) && $userState['state'] === 'profile_completion') {
+                        // دریافت اطلاعات کاربر از دیتابیس
+                        $userData = \Application\Model\DB::table('users')->where('telegram_id', $user_id)->first();
+                        
+                        if (!$userData) {
+                            sendMessage($_ENV['TELEGRAM_TOKEN'], $chat_id, "⚠️ خطا در دریافت اطلاعات کاربری");
+                            echo "خطا: کاربر در دیتابیس یافت نشد\n";
+                            unlink($user_state_file); // حذف فایل وضعیت
+                            continue;
+                        }
+                        
+                        // پردازش مراحل مختلف تکمیل پروفایل
+                        if ($userState['step'] === 'waiting_for_name') {
+                            // ثبت نام
+                            $full_name = trim($text);
+                            
+                            if (strlen($full_name) > 100) {
+                                sendMessage($_ENV['TELEGRAM_TOKEN'], $chat_id, "⚠️ نام وارد شده خیلی طولانی است. لطفاً نام کوتاه‌تری وارد کنید.");
+                                continue;
+                            }
+                            
+                            // ذخیره نام در پروفایل کاربر
+                            $profileExists = \Application\Model\DB::table('user_profiles')
+                                ->where('user_id', $userData['id'])
+                                ->exists();
+                                
+                            if ($profileExists) {
+                                \Application\Model\DB::table('user_profiles')
+                                    ->where('user_id', $userData['id'])
+                                    ->update(['full_name' => $full_name]);
+                            } else {
+                                \Application\Model\DB::table('user_profiles')->insert([
+                                    'user_id' => $userData['id'],
+                                    'full_name' => $full_name
+                                ]);
+                            }
+                            
+                            // به روز رسانی وضعیت کاربر به مرحله بعدی - جنسیت
+                            $userState['step'] = 'waiting_for_gender';
+                            file_put_contents($user_state_file, json_encode($userState));
+                            
+                            // مرحله بعدی - انتخاب جنسیت
+                            $message = "📝 *تکمیل پروفایل*\n\n";
+                            $message .= "مرحله 3/7: لطفاً جنسیت خود را انتخاب کنید.";
+                            
+                            // ایجاد دکمه انتخاب جنسیت
+                            $gender_keyboard = [
+                                'keyboard' => [
+                                    [
+                                        ['text' => '👨 پسر'], ['text' => '👩 دختر']
+                                    ],
+                                    [
+                                        ['text' => 'لغو ❌']
+                                    ]
+                                ],
+                                'resize_keyboard' => true
+                            ];
+                            
+                            sendMessageWithKeyboard($_ENV['TELEGRAM_TOKEN'], $chat_id, $message, json_encode($gender_keyboard));
+                            continue;
+                        }
+                        else if ($userState['step'] === 'waiting_for_gender') {
+                            // پردازش انتخاب جنسیت
+                            $gender = '';
+                            if (strpos($text, 'پسر') !== false) {
+                                $gender = 'male';
+                            } else if (strpos($text, 'دختر') !== false) {
+                                $gender = 'female';
+                            } else {
+                                sendMessage($_ENV['TELEGRAM_TOKEN'], $chat_id, "⚠️ لطفاً یکی از گزینه‌های نمایش داده شده را انتخاب کنید.");
+                                continue;
+                            }
+                            
+                            // ذخیره جنسیت در پروفایل کاربر
+                            $profileExists = \Application\Model\DB::table('user_profiles')
+                                ->where('user_id', $userData['id'])
+                                ->exists();
+                                
+                            if ($profileExists) {
+                                \Application\Model\DB::table('user_profiles')
+                                    ->where('user_id', $userData['id'])
+                                    ->update(['gender' => $gender]);
+                            } else {
+                                \Application\Model\DB::table('user_profiles')->insert([
+                                    'user_id' => $userData['id'],
+                                    'gender' => $gender
+                                ]);
+                            }
+                            
+                            // به روز رسانی وضعیت کاربر به مرحله بعدی - سن
+                            $userState['step'] = 'waiting_for_age';
+                            file_put_contents($user_state_file, json_encode($userState));
+                            
+                            // ایجاد دکمه های سن
+                            $age_keyboard = ['keyboard' => [], 'resize_keyboard' => true];
+                            $row = [];
+                            for ($age = 9; $age <= 70; $age++) {
+                                $row[] = ['text' => $age];
+                                if (count($row) == 5 || $age == 70) { // 5 عدد در هر ردیف
+                                    $age_keyboard['keyboard'][] = $row;
+                                    $row = [];
+                                }
+                            }
+                            $age_keyboard['keyboard'][] = [['text' => 'لغو ❌']];
+                            
+                            // مرحله بعدی - انتخاب سن
+                            $message = "📝 *تکمیل پروفایل*\n\n";
+                            $message .= "مرحله 4/7: لطفاً سن خود را انتخاب کنید.";
+                            
+                            sendMessageWithKeyboard($_ENV['TELEGRAM_TOKEN'], $chat_id, $message, json_encode($age_keyboard));
+                            continue;
+                        }
+                        else if ($userState['step'] === 'waiting_for_age') {
+                            // پردازش انتخاب سن
+                            $age = intval($text);
+                            if ($age < 9 || $age > 70) {
+                                sendMessage($_ENV['TELEGRAM_TOKEN'], $chat_id, "⚠️ لطفاً سن بین 9 تا 70 سال انتخاب کنید.");
+                                continue;
+                            }
+                            
+                            // ذخیره سن در پروفایل کاربر
+                            $profileExists = \Application\Model\DB::table('user_profiles')
+                                ->where('user_id', $userData['id'])
+                                ->exists();
+                                
+                            if ($profileExists) {
+                                \Application\Model\DB::table('user_profiles')
+                                    ->where('user_id', $userData['id'])
+                                    ->update(['age' => $age]);
+                            } else {
+                                \Application\Model\DB::table('user_profiles')->insert([
+                                    'user_id' => $userData['id'],
+                                    'age' => $age
+                                ]);
+                            }
+                            
+                            // به روز رسانی وضعیت کاربر به مرحله بعدی - بیوگرافی
+                            $userState['step'] = 'waiting_for_bio';
+                            file_put_contents($user_state_file, json_encode($userState));
+                            
+                            // مرحله بعدی - ارسال بیوگرافی
+                            $message = "📝 *تکمیل پروفایل*\n\n";
+                            $message .= "مرحله 5/7: لطفاً بیوگرافی کوتاهی درباره خود بنویسید.";
+                            
+                            $cancel_keyboard = [
+                                'keyboard' => [
+                                    [
+                                        ['text' => 'لغو ❌']
+                                    ]
+                                ],
+                                'resize_keyboard' => true
+                            ];
+                            
+                            sendMessageWithKeyboard($_ENV['TELEGRAM_TOKEN'], $chat_id, $message, json_encode($cancel_keyboard));
+                            continue;
+                        }
+                        else if ($userState['step'] === 'waiting_for_bio') {
+                            // ثبت بیوگرافی
+                            $bio = trim($text);
+                            
+                            if (strlen($bio) > 300) {
+                                sendMessage($_ENV['TELEGRAM_TOKEN'], $chat_id, "⚠️ بیوگرافی وارد شده خیلی طولانی است. لطفاً متن کوتاه‌تری وارد کنید.");
+                                continue;
+                            }
+                            
+                            // ذخیره بیوگرافی در پروفایل کاربر
+                            $profileExists = \Application\Model\DB::table('user_profiles')
+                                ->where('user_id', $userData['id'])
+                                ->exists();
+                                
+                            if ($profileExists) {
+                                \Application\Model\DB::table('user_profiles')
+                                    ->where('user_id', $userData['id'])
+                                    ->update(['bio' => $bio]);
+                            } else {
+                                \Application\Model\DB::table('user_profiles')->insert([
+                                    'user_id' => $userData['id'],
+                                    'bio' => $bio
+                                ]);
+                            }
+                            
+                            // ارسال بیوگرافی به کانال ادمین
+                            $admin_channel_id = "-100123456789"; // آیدی کانال ادمین را قرار دهید
+                            try {
+                                $admin_message = "✅ درخواست تأیید بیوگرافی:\n\nکاربر: {$userData['username']}\nآیدی: {$userData['telegram_id']}\n\nبیوگرافی:\n{$bio}";
+                                
+                                $admin_keyboard = json_encode([
+                                    'inline_keyboard' => [
+                                        [
+                                            ['text' => '✅ تأیید', 'callback_data' => "approve_bio:{$userData['id']}"],
+                                            ['text' => '❌ رد', 'callback_data' => "reject_bio:{$userData['id']}"]
+                                        ]
+                                    ]
+                                ]);
+                                
+                                // sendMessage($_ENV['TELEGRAM_TOKEN'], $admin_channel_id, $admin_message, $admin_keyboard);
+                                echo "بیوگرافی به کانال ادمین ارسال شد\n";
+                            } catch (Exception $e) {
+                                echo "خطا در ارسال بیوگرافی به کانال ادمین: " . $e->getMessage() . "\n";
+                            }
+                            
+                            // به روز رسانی وضعیت کاربر به مرحله بعدی - استان
+                            $userState['step'] = 'waiting_for_province';
+                            file_put_contents($user_state_file, json_encode($userState));
+                            
+                            // لیست استان‌های ایران
+                            $provinces = [
+                                "آذربایجان شرقی", "آذربایجان غربی", "اردبیل", "اصفهان", "البرز",
+                                "ایلام", "بوشهر", "تهران", "چهارمحال و بختیاری", "خراسان جنوبی",
+                                "خراسان رضوی", "خراسان شمالی", "خوزستان", "زنجان", "سمنان",
+                                "سیستان و بلوچستان", "فارس", "قزوین", "قم", "کردستان",
+                                "کرمان", "کرمانشاه", "کهگیلویه و بویراحمد", "گلستان", "گیلان",
+                                "لرستان", "مازندران", "مرکزی", "هرمزگان", "همدان", "یزد"
+                            ];
+                            
+                            // ایجاد کیبورد استان‌ها
+                            $province_keyboard = ['keyboard' => [], 'resize_keyboard' => true];
+                            $row = [];
+                            foreach ($provinces as $province) {
+                                $row[] = ['text' => $province];
+                                if (count($row) == 2) {
+                                    $province_keyboard['keyboard'][] = $row;
+                                    $row = [];
+                                }
+                            }
+                            if (!empty($row)) {
+                                $province_keyboard['keyboard'][] = $row;
+                            }
+                            $province_keyboard['keyboard'][] = [['text' => 'ترجیح میدهم نگویم']];
+                            $province_keyboard['keyboard'][] = [['text' => 'لغو ❌']];
+                            
+                            // مرحله بعدی - انتخاب استان
+                            $message = "📝 *تکمیل پروفایل*\n\n";
+                            $message .= "مرحله 6/7: لطفاً استان خود را انتخاب کنید.";
+                            
+                            sendMessageWithKeyboard($_ENV['TELEGRAM_TOKEN'], $chat_id, $message, json_encode($province_keyboard));
                             continue;
                         }
                     }
@@ -1181,6 +1437,114 @@ while (true) {
                 echo "اطلاعات راهنما ارسال شد\n";
             }
 
+            // پاسخ به دکمه پروفایل
+            else if ($text === '📝 پروفایل') {
+                try {
+                    // دریافت اطلاعات کاربر
+                    $userData = \Application\Model\DB::table('users')->where('telegram_id', $user_id)->first();
+                    if (!$userData) {
+                        sendMessage($_ENV['TELEGRAM_TOKEN'], $chat_id, "⚠️ خطا در دریافت اطلاعات کاربری");
+                        continue;
+                    }
+                    
+                    $userExtra = \Application\Model\DB::table('users_extra')->where('user_id', $userData['id'])->first();
+                    if (!$userExtra) {
+                        sendMessage($_ENV['TELEGRAM_TOKEN'], $chat_id, "⚠️ خطا در دریافت اطلاعات اضافی کاربر");
+                        continue;
+                    }
+                    
+                    // پروفایل کاربر
+                    $profile = "👤 *اطلاعات پروفایل شما*\n\n";
+                    $profile .= "📛 *نام کاربری:* " . ($userData['username'] ?? 'تنظیم نشده') . "\n";
+                    
+                    // اطلاعات تکمیلی پروفایل (اگر ثبت شده باشد)
+                    $userProfile = \Application\Model\DB::table('user_profiles')->where('user_id', $userData['id'])->first();
+                    
+                    if ($userProfile) {
+                        if (isset($userProfile['full_name']) && !empty($userProfile['full_name'])) {
+                            $profile .= "👤 *نام:* " . $userProfile['full_name'] . "\n";
+                        }
+                        if (isset($userProfile['gender'])) {
+                            $gender_text = $userProfile['gender'] === 'male' ? 'پسر' : 'دختر';
+                            $profile .= "👫 *جنسیت:* " . $gender_text . "\n";
+                        }
+                        if (isset($userProfile['age']) && $userProfile['age'] > 0) {
+                            $profile .= "🎂 *سن:* " . $userProfile['age'] . "\n";
+                        }
+                        if (isset($userProfile['bio']) && !empty($userProfile['bio'])) {
+                            $profile .= "📝 *بیوگرافی:* " . $userProfile['bio'] . "\n";
+                        }
+                        if (isset($userProfile['province']) && !empty($userProfile['province'])) {
+                            $profile .= "🏠 *استان:* " . $userProfile['province'] . "\n";
+                        }
+                        if (isset($userProfile['city']) && !empty($userProfile['city'])) {
+                            $profile .= "🏙️ *شهر:* " . $userProfile['city'] . "\n";
+                        }
+                    } else {
+                        $profile .= "\n⚠️ پروفایل شما کامل نیست. برای کامل کردن پروفایل روی دکمه «تکمیل پروفایل» کلیک کنید.";
+                    }
+                    
+                    // ایجاد دکمه‌های پروفایل
+                    $keyboard = [
+                        'keyboard' => [
+                            [
+                                ['text' => '👤 تکمیل پروفایل']
+                            ],
+                            [
+                                ['text' => '🔙 بازگشت به منوی اصلی']
+                            ]
+                        ],
+                        'resize_keyboard' => true
+                    ];
+                    
+                    sendMessageWithKeyboard($_ENV['TELEGRAM_TOKEN'], $chat_id, $profile, json_encode($keyboard));
+                    
+                } catch (Exception $e) {
+                    echo "خطا در پردازش پروفایل: " . $e->getMessage() . "\n";
+                    sendMessage($_ENV['TELEGRAM_TOKEN'], $chat_id, "⚠️ خطا در نمایش پروفایل: " . $e->getMessage());
+                }
+            }
+            
+            // پاسخ به دکمه تکمیل پروفایل
+            else if ($text === '👤 تکمیل پروفایل') {
+                try {
+                    // دریافت اطلاعات کاربر
+                    $userData = \Application\Model\DB::table('users')->where('telegram_id', $user_id)->first();
+                    if (!$userData) {
+                        sendMessage($_ENV['TELEGRAM_TOKEN'], $chat_id, "⚠️ خطا در دریافت اطلاعات کاربری");
+                        continue;
+                    }
+                    
+                    // شروع فرآیند تکمیل پروفایل - مرحله اول: درخواست عکس
+                    $message = "📝 *تکمیل پروفایل*\n\n";
+                    $message .= "مرحله 1/7: لطفاً یک عکس برای پروفایل خود ارسال کنید.";
+                    
+                    // ایجاد دکمه لغو
+                    $cancel_keyboard = [
+                        'keyboard' => [
+                            [
+                                ['text' => 'لغو ❌']
+                            ]
+                        ],
+                        'resize_keyboard' => true
+                    ];
+                    
+                    sendMessageWithKeyboard($_ENV['TELEGRAM_TOKEN'], $chat_id, $message, json_encode($cancel_keyboard));
+                    
+                    // ذخیره وضعیت کاربر
+                    $user_state_file = __DIR__ . "/user_states/{$user_id}.json";
+                    $userState = [
+                        'state' => 'profile_completion',
+                        'step' => 'waiting_for_photo'
+                    ];
+                    file_put_contents($user_state_file, json_encode($userState));
+                    
+                } catch (Exception $e) {
+                    echo "خطا در شروع تکمیل پروفایل: " . $e->getMessage() . "\n";
+                    sendMessage($_ENV['TELEGRAM_TOKEN'], $chat_id, "⚠️ خطا در شروع تکمیل پروفایل: " . $e->getMessage());
+                }
+            }
+            
             // تغییر نام کاربری
             else if (strpos($text, 'تغییر نام کاربری') !== false) {
                 try {
